@@ -1,0 +1,30 @@
+* text=auto
+
+# Python & Config files 
+*.py text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+
+# Docker & Shell scripts
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+*.sh text eol=lf
+
+# Game Assets & Binary files
+# Explicitly mark as binary to prevent Git from trying to "fix" them (which causes corruption)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.ttf binary
+
+# Git configuration files
+.gitignore text eol=lf
+.gitattributes text eol=lf
