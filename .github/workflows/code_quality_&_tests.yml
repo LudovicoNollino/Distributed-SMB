@@ -1,0 +1,44 @@
+name: Code Quality & Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # --- JOB 1: CODE QUALITY (Ruff) ---
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: pipx install poetry
+      - name: Install Dependencies
+        run: poetry install
+      - name: Run Ruff Check & Format
+        run: |
+          poetry run ruff check .
+          poetry run ruff format --check .
+
+  # --- JOB 2: AUTOMATED TESTS (Pytest) ---
+  tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: pipx install poetry
+      - name: Install Dependencies
+        run: poetry install
+      - name: Run Pytest
+        run: poetry run pytest
