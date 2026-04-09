@@ -7,5 +7,7 @@
       "source.organizeImports": "explicit"
     }
   },
-  "python.interpreterPath": ".venv/bin/python"
+  "python.interpreterPath": ".venv/bin/python",
+  "python-envs.defaultEnvManager": "ms-python.python:poetry",
+  "python-envs.defaultPackageManager": "ms-python.python:poetry"
 }

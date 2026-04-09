@@ -1,0 +1,7 @@
+"""Project-wide configuration defaults."""
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_UDP_PORT = 50000
+DEFAULT_TCP_PORT = 50001
+TICK_RATE = 60
+MAX_PLAYERS = 4

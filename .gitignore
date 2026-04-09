@@ -174,3 +174,5 @@ __marimo__/
 
 # Ruff
 .ruff_cache/
+
+.codex
