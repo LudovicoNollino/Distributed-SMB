@@ -1,0 +1,39 @@
+from distributed_smb.application.node_controller import NodeController
+from distributed_smb.main import main
+from distributed_smb.shared.config import TICK_INTERVAL
+from distributed_smb.shared.enums import NodeState
+
+
+def test_bootstrap_initializes_node_controller_state():
+    controller = NodeController()
+
+    bootstrapped_controller = controller.bootstrap()
+
+    assert bootstrapped_controller is controller
+    assert controller.is_bootstrapped is True
+    assert controller.lifecycle.state is NodeState.IDLE
+    assert controller.tick_interval == TICK_INTERVAL
+
+
+def test_build_runtime_context_exposes_expected_components():
+    controller = NodeController().bootstrap()
+
+    runtime_context = controller.build_runtime_context()
+
+    assert set(runtime_context) == {
+        "engine",
+        "input_handler",
+        "renderer",
+        "tick_interval",
+    }
+    assert runtime_context["engine"] is controller.engine
+    assert runtime_context["input_handler"] is controller.input_handler
+    assert runtime_context["renderer"] is controller.renderer
+    assert runtime_context["tick_interval"] == controller.tick_interval
+
+
+def test_main_returns_a_bootstrapped_controller():
+    controller = main()
+
+    assert isinstance(controller, NodeController)
+    assert controller.is_bootstrapped is True
