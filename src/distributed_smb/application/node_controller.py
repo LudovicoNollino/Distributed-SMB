@@ -69,4 +69,6 @@ class NodeController:
             "tick_interval": self.tick_interval,
         }
         LOGGER.info("Runtime context ready: %s", ", ".join(sorted(context)))
+        input_snapshot = self.input_handler.read_input()
+        LOGGER.info("Input contract connected: %s", input_snapshot)
         return context
