@@ -3,6 +3,7 @@
 import logging
 
 from distributed_smb.application.node_controller import NodeController
+from distributed_smb.presentation.app import GameApp
 
 
 def build_controller() -> NodeController:
@@ -12,11 +13,17 @@ def build_controller() -> NodeController:
     return controller
 
 
-def main() -> NodeController:
-    """Bootstrap the local node and return its controller."""
+def main() -> None:
+    """Bootstrap the local node and start the graphical application."""
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     logging.info("Starting Distributed SMB")
-    return build_controller()
+
+    controller = build_controller()
+    app = GameApp(
+        engine=controller.engine,
+        input_handler=controller.input_handler,
+    )
+    app.run()
 
 
 if __name__ == "__main__":
