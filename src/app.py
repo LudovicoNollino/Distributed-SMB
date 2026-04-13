@@ -17,6 +17,7 @@ class GameApp:
     width: int = 640
     height: int = 480
     fps: int = 60
+    move_speed: float = 4.0
     local_player_id: str = "player-1"
     engine: GameEngine = field(default_factory=GameEngine)
     input_handler: InputHandler = field(default_factory=InputHandler)
@@ -42,6 +43,25 @@ class GameApp:
             y=120,
         )
 
+    def _apply_local_input_preview(self) -> None:
+        """Temporarily move the local player for presentation-layer testing."""
+        input_state = self.input_handler.read_input()
+        character = self.engine.world_state.characters[self.local_player_id]
+
+        if input_state.left:
+            character.x -= self.move_speed
+        if input_state.right:
+            character.x += self.move_speed
+
+        min_x = 0
+        max_x = self.width - self.renderer.player_width
+        character.x = max(min_x, min(character.x, max_x))
+
+        pygame.display.set_caption(
+            "Distributed SMB "
+            f"| left={input_state.left} right={input_state.right} jump={input_state.jump}"
+        )
+
     def _should_quit(self) -> bool:
         """Return True when the user asks to close the window."""
         for event in pygame.event.get():
@@ -55,14 +75,8 @@ class GameApp:
 
         while running:
             running = not self._should_quit()
-
-            input_state = self.input_handler.read_input()
+            self._apply_local_input_preview()
             self.engine.tick()
-
-            pygame.display.set_caption(
-                "Distributed SMB "
-                f"| left={input_state.left} right={input_state.right} jump={input_state.jump}"
-            )
 
             self.renderer.render(
                 screen=self.screen,
