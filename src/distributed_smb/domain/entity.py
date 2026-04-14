@@ -10,3 +10,4 @@ class Player:
         self.height = 50
 
         self.on_ground = False
+        

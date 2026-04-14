@@ -1,13 +1,10 @@
-"""Authoritative game simulation placeholder."""
-
 from dataclasses import dataclass, field
 
-from distributed_smb.domain.entity import Player
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.domain.collisions import check_collision
 from distributed_smb.domain.physics import JUMP_FORCE, MOVE_SPEED, apply_physics
 
-
+"""Authoritative game simulation placeholder."""
 @dataclass(slots=True)
 class GameEngine:
     """Owns the local world simulation."""
@@ -23,7 +20,7 @@ class GameEngine:
         ]
         player = CharacterState(player_id="player1", x=100, y=100)
         self.world_state.characters[player.player_id] = player
-        
+
     def apply_input(self, input_state) -> None:
         player = self.get_local_player()
 
@@ -65,3 +62,4 @@ class Platform:
         self.y = y
         self.width = width
         self.height = height
+        

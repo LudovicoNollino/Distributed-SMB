@@ -1,7 +1,6 @@
-"""World state definitions."""
-
 from dataclasses import dataclass, field
 
+"""World state definitions."""
 @dataclass(slots=True)
 class CharacterState:
     """Minimal dynamic state for a controllable character."""

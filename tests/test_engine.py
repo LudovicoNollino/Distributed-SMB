@@ -1,5 +1,5 @@
-from src.distributed_smb.domain.game_engine import GameEngine
-from src.distributed_smb.shared.input import InputState
+from distributed_smb.domain.game_engine import GameEngine
+from distributed_smb.shared.input import InputState
 
 def test_move_right():
     engine = GameEngine()
