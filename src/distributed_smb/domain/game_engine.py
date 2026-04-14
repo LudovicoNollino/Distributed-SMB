@@ -1,13 +1,16 @@
 from dataclasses import dataclass, field
 
-from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.domain.collisions import check_collision
 from distributed_smb.domain.physics import JUMP_FORCE, MOVE_SPEED, apply_physics
+from distributed_smb.domain.world import CharacterState, WorldState
 
 """Authoritative game simulation placeholder."""
+
+
 @dataclass(slots=True)
 class GameEngine:
     """Owns the local world simulation."""
+
     world_state: WorldState = field(default_factory=WorldState)
     platforms: list = field(default_factory=list)
     local_player_id: str = "player1"
@@ -16,7 +19,7 @@ class GameEngine:
         self.platforms = [
             Platform(0, 300, 400, 50),
             Platform(450, 250, 200, 50),
-            Platform(700, 350, 300, 50)
+            Platform(700, 350, 300, 50),
         ]
         player = CharacterState(player_id="player1", x=100, y=100)
         self.world_state.characters[player.player_id] = player
@@ -56,10 +59,10 @@ class GameEngine:
     def get_local_player(self) -> CharacterState:
         return self.world_state.characters[self.local_player_id]
 
+
 class Platform:
     def __init__(self, x, y, width, height):
         self.x = x
         self.y = y
         self.width = width
         self.height = height
-        
