@@ -1,5 +1,11 @@
+"""Shared input contract used between presentation and domain."""
+from dataclasses import dataclass
+
+@dataclass(slots=True)
 class InputState:
-    def __init__(self, left=False, right=False, jump=False):
-        self.left = left
-        self.right = right
-        self.jump = jump
+    """Represents the local player's gameplay intentions."""
+
+    left: bool = False
+    right: bool = False
+    jump: bool = False
+
