@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 
-
 @dataclass(slots=True)
 class CharacterState:
     """Minimal dynamic state for a controllable character."""
@@ -12,7 +11,9 @@ class CharacterState:
     y: float = 0.0
     vx: float = 0.0
     vy: float = 0.0
-
+    width: int = 50
+    height: int = 50
+    on_ground: bool = False
 
 @dataclass(slots=True)
 class WorldState:
