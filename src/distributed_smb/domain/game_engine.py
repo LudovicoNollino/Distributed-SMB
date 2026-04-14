@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass, field
 
-from src.distributed_smb.domain.entity import Player
-from src.distributed_smb.domain.world import CharacterState, WorldState
-from src.distributed_smb.domain.collisions import check_collision
-from src.distributed_smb.domain.physics import JUMP_FORCE, MOVE_SPEED, apply_physics
+from distributed_smb.domain.entity import Player
+from distributed_smb.domain.world import CharacterState, WorldState
+from distributed_smb.domain.collisions import check_collision
+from distributed_smb.domain.physics import JUMP_FORCE, MOVE_SPEED, apply_physics
 
 
 @dataclass(slots=True)
