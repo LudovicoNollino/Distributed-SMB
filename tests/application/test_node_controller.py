@@ -39,3 +39,11 @@ def test_main_returns_a_bootstrapped_controller():
 
     assert isinstance(controller, NodeController)
     assert controller.is_bootstrapped is True
+
+
+def test_run_returns_false_when_presentation_runtime_is_missing():
+    controller = NodeController().bootstrap()
+
+    started = controller.run()
+
+    assert started is False

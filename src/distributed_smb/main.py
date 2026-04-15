@@ -12,12 +12,15 @@ def build_controller() -> NodeController:
     return controller
 
 
-def main() -> NodeController:
-    """Bootstrap the local node and return its controller."""
+def main(*, run_app: bool = False) -> NodeController:
+    """Bootstrap the local node and optionally start the application runtime."""
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     logging.info("Starting Distributed SMB")
-    return build_controller()
+    controller = build_controller()
+    if run_app:
+        controller.run()
+    return controller
 
 
 if __name__ == "__main__":
-    main()
+    main(run_app=True)

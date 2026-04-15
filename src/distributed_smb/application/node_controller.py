@@ -1,7 +1,9 @@
 """Orchestrates presentation, domain, and network components."""
 
+import importlib
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
@@ -69,6 +71,39 @@ class NodeController:
             "tick_interval": self.tick_interval,
         }
         LOGGER.info("Runtime context ready: %s", ", ".join(sorted(context)))
-        input_snapshot = self.input_handler.read_input()
-        LOGGER.info("Input contract connected: %s", input_snapshot)
         return context
+
+    def _load_game_app_class(self) -> type[Any] | None:
+        """Load the optional Pygame runtime provided by the presentation layer."""
+        try:
+            module = importlib.import_module("distributed_smb.presentation.app")
+        except ModuleNotFoundError:
+            LOGGER.info("Presentation runtime not available yet: expected presentation.app.GameApp")
+            return None
+
+        game_app_class = getattr(module, "GameApp", None)
+        if game_app_class is None:
+            LOGGER.warning("presentation.app found, but GameApp is missing")
+            return None
+        return game_app_class
+
+    def run(self) -> bool:
+        """Run the application if the presentation runtime is available."""
+        if not self.is_bootstrapped:
+            self.bootstrap()
+
+        game_app_class = self._load_game_app_class()
+        if game_app_class is None:
+            LOGGER.info(
+                "Application bootstrap completed, waiting for presentation runtime integration"
+            )
+            return False
+
+        LOGGER.info("Delegating execution to presentation runtime")
+        app = game_app_class(
+            engine=self.engine,
+            input_handler=self.input_handler,
+            renderer=self.renderer,
+        )
+        app.run()
+        return True
