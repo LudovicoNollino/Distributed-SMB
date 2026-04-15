@@ -3,6 +3,8 @@
 import logging
 from dataclasses import dataclass, field
 
+import pygame
+
 from distributed_smb.shared.input import InputState
 
 LOGGER = logging.getLogger(__name__)
@@ -17,6 +19,15 @@ class InputHandler:
 
     def read_input(self) -> InputState:
         """Return the latest logical input snapshot."""
+
+        keys = pygame.key.get_pressed()
+
+        self.current_input = InputState(
+            left=keys[pygame.K_LEFT] or keys[pygame.K_a],
+            right=keys[pygame.K_RIGHT] or keys[pygame.K_d],
+            jump=keys[pygame.K_SPACE] or keys[pygame.K_UP] or keys[pygame.K_w],
+        )
+
         LOGGER.info(
             "Input snapshot ready: left=%s, right=%s, jump=%s",
             self.current_input.left,
