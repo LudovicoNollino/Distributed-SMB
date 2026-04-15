@@ -1,6 +1,6 @@
-"""World state definitions."""
-
 from dataclasses import dataclass, field
+
+"""World state definitions."""
 
 
 @dataclass(slots=True)
@@ -12,6 +12,9 @@ class CharacterState:
     y: float = 0.0
     vx: float = 0.0
     vy: float = 0.0
+    width: int = 50
+    height: int = 50
+    on_ground: bool = False
 
 
 @dataclass(slots=True)
