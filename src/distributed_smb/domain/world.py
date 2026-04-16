@@ -23,3 +23,16 @@ class WorldState:
 
     sequence_number: int = 0
     characters: dict[str, CharacterState] = field(default_factory=dict)
+
+def add_player(self, player_id, character_state):
+    self.characters[player_id] = character_state
+
+def remove_player(self, player_id):
+    del self.characters[player_id]
+
+def get_player(self, player_id):
+    return self.characters.get(player_id)
+
+def get_all_players(self):
+    return self.characters.values()
+
