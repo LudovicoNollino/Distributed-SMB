@@ -24,15 +24,19 @@ class WorldState:
     sequence_number: int = 0
     characters: dict[str, CharacterState] = field(default_factory=dict)
 
-    def add_player(self, player_id, character_state):
-        self.characters[player_id] = character_state
+    def add_player(self, character: CharacterState):
+        self.characters[character.player_id] = character
 
-    def remove_player(self, player_id):
-        del self.characters[player_id]
+    def remove_player(self, player_id: str):
+        if player_id in self.characters:
+            del self.characters[player_id]
 
-    def get_player(self, player_id):
-        return self.characters.get(player_id)
+    def get_player(self, player_id: str) -> CharacterState | None:
+        return self.characters[player_id] if player_id in self.characters else None
 
     def get_all_players(self):
         return self.characters.values()
+    
+    def get_all_players_dict(self):
+        return self.characters
 
