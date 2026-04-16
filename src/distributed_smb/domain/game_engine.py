@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from distributed_smb.domain.collisions import check_collision
 from distributed_smb.domain.physics import JUMP_FORCE, MOVE_SPEED, apply_physics
 from distributed_smb.domain.world import CharacterState, WorldState
+from distributed_smb.shared.input import InputState
 
 """Authoritative game simulation placeholder."""
 
@@ -22,21 +23,25 @@ class GameEngine:
             Platform(700, 350, 300, 50),
         ]
         player = CharacterState(player_id="player1", x=100, y=100)
-        self.world_state.characters[player.player_id] = player
+        self.world_state.add_player(player)
 
-    def apply_input(self, input_state) -> None:
-        player = self.get_local_player()
+    def apply_input(self, inputs: dict[player_id, InputState]) -> None:
+        
+        for player_id, input_state in inputs.items():
+            player = self.world_state.get_player(player_id)
+            if not player:
+                continue
 
-        if input_state.left:
-            player.vx = -MOVE_SPEED
-        elif input_state.right:
-            player.vx = MOVE_SPEED
-        else:
-            player.vx = 0
+            if input_state.left:
+                player.vx = -MOVE_SPEED
+            elif input_state.right:
+                player.vx = MOVE_SPEED
+            else:
+                player.vx = 0
 
-        if input_state.jump and player.on_ground:
-            player.vy = JUMP_FORCE
-            player.on_ground = False
+            if input_state.jump and player.on_ground:
+                player.vy = JUMP_FORCE
+                player.on_ground = False
 
     def tick(self, dt):
         for player in self.world_state.characters.values():
