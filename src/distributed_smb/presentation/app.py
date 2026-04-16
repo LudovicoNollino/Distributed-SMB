@@ -70,8 +70,8 @@ class GameApp:
             dt = self.clock.tick(self.fps) / 1000
             running = not self._should_quit()
             input_state = self.input_handler.read_input()
-            self.engine.apply_input(input_state)
-            self.engine.tick(dt)
+            inputs = {"player1": input_state}
+            self.engine.tick(dt, inputs)
             self._clamp_local_player_to_window()
             self._update_window_caption()
             self.renderer.render(
