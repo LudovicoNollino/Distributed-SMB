@@ -25,7 +25,7 @@ class GameEngine:
         player = CharacterState(player_id="player1", x=100, y=100)
         self.world_state.add_player(player)
 
-    def apply_input(self, inputs: dict[player_id, InputState]) -> None:
+    def apply_inputs(self, inputs: dict[str, InputState]) -> None:
         
         for player_id, input_state in inputs.items():
             player = self.world_state.get_player(player_id)
@@ -43,7 +43,8 @@ class GameEngine:
                 player.vy = JUMP_FORCE
                 player.on_ground = False
 
-    def tick(self, dt):
+    def tick(self, dt, inputs: dict[str, InputState]):
+        self.apply_inputs(inputs)
         for player in self.world_state.characters.values():
             apply_physics(player, dt)
         self.handle_collisions()
