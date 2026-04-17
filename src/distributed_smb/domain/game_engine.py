@@ -1,10 +1,11 @@
+"""Authoritative game simulation placeholder."""
+
 from dataclasses import dataclass, field
 
 from distributed_smb.domain.collisions import check_collision
 from distributed_smb.domain.physics import JUMP_FORCE, MOVE_SPEED, apply_physics
 from distributed_smb.domain.world import CharacterState, WorldState
-
-"""Authoritative game simulation placeholder."""
+from distributed_smb.shared.config import WORLD_SCALE
 
 
 @dataclass(slots=True)
@@ -15,13 +16,18 @@ class GameEngine:
     platforms: list = field(default_factory=list)
     local_player_id: str = "player1"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        s = WORLD_SCALE
         self.platforms = [
-            Platform(0, 300, 400, 50),
-            Platform(450, 250, 200, 50),
-            Platform(700, 350, 300, 50),
+            Platform(int(0 * s), int(300 * s), int(400 * s), int(50 * s)),
+            Platform(int(450 * s), int(250 * s), int(200 * s), int(50 * s)),
+            Platform(int(700 * s), int(350 * s), int(300 * s), int(50 * s)),
         ]
-        player = CharacterState(player_id="player1", x=100, y=100)
+        player = CharacterState(
+            player_id=self.local_player_id,
+            x=float(int(100 * s)),
+            y=float(int(100 * s)),
+        )
         self.world_state.characters[player.player_id] = player
 
     def apply_input(self, input_state) -> None:
@@ -38,30 +44,29 @@ class GameEngine:
             player.vy = JUMP_FORCE
             player.on_ground = False
 
-    def tick(self, dt):
+    def tick(self, dt: float) -> None:
+        """Advance the simulation by one logical step."""
         for player in self.world_state.characters.values():
             apply_physics(player, dt)
         self.handle_collisions()
-        """Advance the simulation by one logical step."""
         self.world_state.sequence_number += 1
 
-    def handle_collisions(self):
+    def handle_collisions(self) -> None:
         for player in self.world_state.characters.values():
             player.on_ground = False
 
-            for p in self.platforms:
-                if check_collision(player, p):
-                    if player.vy > 0:
-                        player.y = p.y - player.height
-                        player.vy = 0
-                        player.on_ground = True
+            for platform in self.platforms:
+                if check_collision(player, platform) and player.vy > 0:
+                    player.y = platform.y - player.height
+                    player.vy = 0
+                    player.on_ground = True
 
     def get_local_player(self) -> CharacterState:
         return self.world_state.characters[self.local_player_id]
 
 
 class Platform:
-    def __init__(self, x, y, width, height):
+    def __init__(self, x: int, y: int, width: int, height: int) -> None:
         self.x = x
         self.y = y
         self.width = width

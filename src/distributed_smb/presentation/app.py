@@ -7,15 +7,15 @@ import pygame
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.presentation.input_handler import InputHandler
 from distributed_smb.presentation.renderer import Renderer
+from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
 
 
 @dataclass
 class GameApp:
     """Owns the local Pygame window and presentation loop."""
 
-    engine: GameEngine
-    width: int = 640
-    height: int = 480
+    width: int = WINDOW_WIDTH
+    height: int = WINDOW_HEIGHT
     fps: int = 60
     local_player_id: str = "player1"
     engine: GameEngine = field(default_factory=GameEngine)
@@ -45,13 +45,18 @@ class GameApp:
         """Keep the local player within the visible screen bounds."""
         character = self.engine.get_local_player()
         min_x = 0
-        max_x = self.width - self.renderer.player_width
+        max_x = self.width - character.width
         character.x = max(min_x, min(character.x, max_x))
 
     def _build_platform_rects(self) -> list[pygame.Rect]:
         """Translate domain platforms into rectangles that the renderer can draw."""
         return [
-            pygame.Rect(platform.x, platform.y, platform.width, platform.height)
+            pygame.Rect(
+                int(platform.x),
+                int(platform.y),
+                int(platform.width),
+                int(platform.height),
+            )
             for platform in self.engine.platforms
         ]
 
