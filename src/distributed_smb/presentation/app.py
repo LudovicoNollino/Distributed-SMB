@@ -13,6 +13,7 @@ from distributed_smb.presentation.renderer import Renderer
 class GameApp:
     """Owns the local Pygame window and presentation loop."""
 
+    engine: GameEngine
     width: int = 640
     height: int = 480
     fps: int = 60
@@ -59,7 +60,9 @@ class GameApp:
         character = self.engine.get_local_player()
         pygame.display.set_caption(
             "Distributed SMB "
-            f"| x={int(character.x)} y={int(character.y)} seq={self.engine.world_state.sequence_number}"
+            f"| x={int(character.x)} "
+            f"y={int(character.y)} "
+            f"seq={self.engine.world_state.sequence_number}"
         )
 
     def run(self) -> None:
