@@ -14,7 +14,6 @@ class GameEngine:
 
     world_state: WorldState = field(default_factory=WorldState)
     platforms: list = field(default_factory=list)
-    local_player_id: str = "player1"
 
     def __post_init__(self):
         self.platforms = [
@@ -22,8 +21,6 @@ class GameEngine:
             Platform(450, 250, 200, 50),
             Platform(700, 350, 300, 50),
         ]
-        player = CharacterState(player_id="player1", x=100, y=100)
-        self.world_state.add_player(player)
 
     def apply_inputs(self, inputs: dict[str, InputState]) -> None:
         
@@ -61,9 +58,6 @@ class GameEngine:
                         player.y = p.y - player.height
                         player.vy = 0
                         player.on_ground = True
-
-    def get_local_player(self) -> CharacterState:
-        return self.world_state.characters[self.local_player_id]
 
     def spawn_player(self, player_id: str, x=100, y=100):
         player = CharacterState(player_id=player_id, x=x, y=y)
