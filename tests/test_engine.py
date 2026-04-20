@@ -3,8 +3,11 @@ from distributed_smb.shared.input import InputState
 
 
 def test_move_right():
+
     engine = GameEngine()
-    player = engine.get_local_player()
+    engine.spawn_player("player1")
+    players = engine.world_state.get_all_players()
+    player = players[0]
     initial_x = player.x
 
     input_state = InputState(right=True)
@@ -17,7 +20,10 @@ def test_move_right():
 
 def test_gravity():
     engine = GameEngine()
-    player = engine.get_local_player()
+    engine.spawn_player("player1")
+    players = engine.world_state.get_all_players()
+    player = players[0]
+
     initial_y = player.y
 
     for _ in range(60):
@@ -28,7 +34,9 @@ def test_gravity():
 
 def test_jump():
     engine = GameEngine()
-    player = engine.get_local_player()
+    engine.spawn_player("player1")
+    players = engine.world_state.get_all_players()
+    player = players[0]
 
     player.on_ground = True
 
@@ -41,7 +49,10 @@ def test_jump():
 
 def test_landing():
     engine = GameEngine()
-    player = engine.get_local_player()
+    engine.spawn_player("player1")
+    players = engine.world_state.get_all_players()
+    player = players[0]
+
     player.y = 300
     player.vy = 100
 
@@ -54,7 +65,9 @@ def test_landing():
 
 def test_no_input():
     engine = GameEngine()
-    player = engine.get_local_player()
+    engine.spawn_player("player1")
+    players = engine.world_state.get_all_players()
+    player = players[0]
 
     initial_x = player.x
 
@@ -66,7 +79,9 @@ def test_no_input():
 
 def test_collision_floor():
     engine = GameEngine()
-    player = engine.get_local_player()
+    engine.spawn_player("player1")
+    players = engine.world_state.get_all_players()
+    player = players[0]
 
     player.y = 0
     player.vy = 0
@@ -80,7 +95,6 @@ def test_collision_floor():
 
 def test_multiplayer_inputs():
     engine = GameEngine()
-
     engine.spawn_player("p1")
     engine.spawn_player("p2")
 
