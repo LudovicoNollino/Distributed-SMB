@@ -13,6 +13,12 @@ def build_controller() -> NodeController:
     return controller
 
 
+def get_controller() -> NodeController:
+    """Get a bootstrapped controller without starting the GUI (for testing)."""
+    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+    return build_controller()
+
+
 def main() -> None:
     """Bootstrap the local node and start the graphical application."""
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")

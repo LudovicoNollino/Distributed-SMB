@@ -1,5 +1,5 @@
 from distributed_smb.application.node_controller import NodeController
-from distributed_smb.main import main
+from distributed_smb.main import get_controller
 from distributed_smb.shared.config import TICK_INTERVAL
 from distributed_smb.shared.enums import NodeState
 from distributed_smb.shared.input import InputState
@@ -35,7 +35,7 @@ def test_build_runtime_context_exposes_expected_components():
 
 
 def test_main_returns_a_bootstrapped_controller():
-    controller = main()
+    controller = get_controller()
 
     assert isinstance(controller, NodeController)
     assert controller.is_bootstrapped is True
