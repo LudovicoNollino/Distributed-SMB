@@ -41,4 +41,3 @@ class WorldState:
 
     def get_all_players_dict(self):
         return self.characters
-

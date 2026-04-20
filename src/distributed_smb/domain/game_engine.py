@@ -25,7 +25,6 @@ class GameEngine:
         ]
 
     def apply_inputs(self, inputs: dict[str, InputState]) -> None:
-
         for player_id, input_state in inputs.items():
             player = self.world_state.get_player(player_id)
             if not player:

@@ -3,7 +3,6 @@ from distributed_smb.shared.input import InputState
 
 
 def test_move_right():
-
     engine = GameEngine()
     engine.spawn_player("player1")
     players = engine.world_state.get_all_players()
@@ -93,15 +92,13 @@ def test_collision_floor():
 
     assert player.y + player.height == floor_y, "Collision with floor is incorrect"
 
+
 def test_multiplayer_inputs():
     engine = GameEngine()
     engine.spawn_player("p1")
     engine.spawn_player("p2")
 
-    inputs = {
-        "p1": InputState(right=True),
-        "p2": InputState(left=True)
-    }
+    inputs = {"p1": InputState(right=True), "p2": InputState(left=True)}
 
     engine.tick(0.016, inputs)
 
