@@ -35,7 +35,7 @@ class WorldState:
         return self.characters[player_id] if player_id in self.characters else None
 
     def get_all_players(self):
-        return self.characters.values()
+        return list(self.characters.values())
     
     def get_all_players_dict(self):
         return self.characters
