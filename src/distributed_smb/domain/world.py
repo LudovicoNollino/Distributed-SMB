@@ -1,6 +1,8 @@
+"""World state definitions."""
+
 from dataclasses import dataclass, field
 
-"""World state definitions."""
+from distributed_smb.shared.config import PLAYER_HEIGHT, PLAYER_WIDTH
 
 
 @dataclass(slots=True)
@@ -12,8 +14,8 @@ class CharacterState:
     y: float = 0.0
     vx: float = 0.0
     vy: float = 0.0
-    width: int = 50
-    height: int = 50
+    width: int = PLAYER_WIDTH
+    height: int = PLAYER_HEIGHT
     on_ground: bool = False
 
 
@@ -36,7 +38,7 @@ class WorldState:
 
     def get_all_players(self):
         return list(self.characters.values())
-    
+
     def get_all_players_dict(self):
         return self.characters
 
