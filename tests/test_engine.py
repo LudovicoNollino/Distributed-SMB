@@ -10,8 +10,7 @@ def test_move_right():
     input_state = InputState(right=True)
 
     for _ in range(60):
-        engine.apply_input(input_state)
-        engine.tick(1 / 60)
+        engine.tick(1 / 60, {"player1": input_state})
 
     assert player.x > initial_x, "Player did not move to the right"
 
@@ -22,7 +21,7 @@ def test_gravity():
     initial_y = player.y
 
     for _ in range(60):
-        engine.tick(1 / 60)
+        engine.tick(1 / 60, {"player1": InputState()})
 
     assert player.y > initial_y, "Gravity does not work"
 
@@ -35,8 +34,7 @@ def test_jump():
 
     input_state = InputState(jump=True)
 
-    engine.apply_input(input_state)
-    engine.tick(1 / 60)
+    engine.tick(1 / 60, {"player1": input_state})
 
     assert player.vy < 0, "Jump does not set upward velocity"
 
@@ -48,7 +46,7 @@ def test_landing():
     player.vy = 100
 
     for _ in range(120):
-        engine.tick(1 / 60)
+        engine.tick(1 / 60, {"player1": InputState()})
 
     assert player.on_ground is True, "Player did not land"
     assert player.vy == 0, "Vertical velocity did not reset on landing"
@@ -61,7 +59,7 @@ def test_no_input():
     initial_x = player.x
 
     for _ in range(60):
-        engine.tick(1 / 60)
+        engine.tick(1 / 60, {"player1": InputState()})
 
     assert player.x == initial_x, "Player did not stay in place without input"
 
@@ -74,8 +72,27 @@ def test_collision_floor():
     player.vy = 0
 
     for _ in range(300):
-        engine.tick(1 / 60)
+        engine.tick(1 / 60, {"player1": InputState()})
 
     floor_y = engine.platforms[0].y
 
     assert player.y + player.height == floor_y, "Collision with floor is incorrect"
+
+def test_multiplayer_inputs():
+    engine = GameEngine()
+
+    engine.spawn_player("p1")
+    engine.spawn_player("p2")
+
+    inputs = {
+        "p1": InputState(right=True),
+        "p2": InputState(left=True)
+    }
+
+    engine.tick(0.016, inputs)
+
+    p1 = engine.world_state.get_player("p1")
+    p2 = engine.world_state.get_player("p2")
+
+    assert p1.vx > 0
+    assert p2.vx < 0
