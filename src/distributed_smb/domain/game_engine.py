@@ -65,6 +65,10 @@ class GameEngine:
     def get_local_player(self) -> CharacterState:
         return self.world_state.characters[self.local_player_id]
 
+    def spawn_player(self, player_id: str, x=100, y=100):
+        player = CharacterState(player_id=player_id, x=x, y=y)
+        self.world_state.add_player(player)
+
 
 class Platform:
     def __init__(self, x, y, width, height):
