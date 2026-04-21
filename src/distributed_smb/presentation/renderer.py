@@ -15,8 +15,15 @@ class Renderer:
     width: int = WINDOW_WIDTH
     height: int = WINDOW_HEIGHT
     background_color: tuple[int, int, int] = (135, 206, 235)
-    player_color: tuple[int, int, int] = (220, 50, 50)
     platform_color: tuple[int, int, int] = (90, 60, 40)
+    player_palette: dict[str, tuple[int, int, int]] = None
+
+    def __post_init__(self) -> None:
+        if self.player_palette is None:
+            self.player_palette = {
+                "player1": (220, 50, 50),
+                "player2": (50, 90, 220),
+            }
 
     def render(
         self,
@@ -37,6 +44,7 @@ class Renderer:
                 int(character.width),
                 int(character.height),
             )
-            pygame.draw.rect(screen, self.player_color, player_rect)
+            color = self.player_palette.get(character.player_id, (80, 80, 80))
+            pygame.draw.rect(screen, color, player_rect)
 
         pygame.display.flip()

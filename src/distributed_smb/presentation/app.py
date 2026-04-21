@@ -1,13 +1,16 @@
 """Pygame application loop for the local presentation layer."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import pygame
 
 from distributed_smb.domain.game_engine import GameEngine
+from distributed_smb.domain.world import WorldState
 from distributed_smb.presentation.input_handler import InputHandler
 from distributed_smb.presentation.renderer import Renderer
 from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
+from distributed_smb.shared.input import InputState
 
 
 @dataclass
@@ -21,6 +24,7 @@ class GameApp:
     engine: GameEngine = field(default_factory=GameEngine)
     input_handler: InputHandler = field(default_factory=InputHandler)
     renderer: Renderer = field(default_factory=Renderer)
+    frame_handler: Callable[[float, InputState], WorldState] | None = None
 
     def __post_init__(self) -> None:
         pygame.init()
@@ -63,10 +67,19 @@ class GameApp:
     def _update_window_caption(self) -> None:
         """Expose a little runtime context while the app loop is minimal."""
         character = self.get_local_player()
+        player1 = self.engine.world_state.get_player("player1")
+        player2 = self.engine.world_state.get_player("player2")
+        player1_coords = (
+            f"p1=({int(player1.x)},{int(player1.y)})" if player1 is not None else "p1=(missing)"
+        )
+        player2_coords = (
+            f"p2=({int(player2.x)},{int(player2.y)})" if player2 is not None else "p2=(missing)"
+        )
         pygame.display.set_caption(
-            "Distributed SMB "
-            f"| x={int(character.x)} "
-            f"y={int(character.y)} "
+            f"Distributed SMB [{self.local_player_id}] "
+            f"| local=({int(character.x)},{int(character.y)}) "
+            f"| {player1_coords} "
+            f"| {player2_coords} "
             f"seq={self.engine.world_state.sequence_number}"
         )
 
@@ -78,8 +91,10 @@ class GameApp:
             dt = self.clock.tick(self.fps) / 1000
             running = not self._should_quit()
             input_state = self.input_handler.read_input()
-            inputs = {"player1": input_state}
-            self.engine.tick(dt, inputs)
+            if self.frame_handler is None:
+                self.engine.tick(dt, {self.local_player_id: input_state})
+            else:
+                self.frame_handler(dt, input_state)
             self._clamp_local_player_to_window()
             self._update_window_caption()
             self.renderer.render(

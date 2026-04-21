@@ -6,7 +6,7 @@ from distributed_smb.application.node_controller import NodeController
 from distributed_smb.main import get_controller
 from distributed_smb.presentation.input_handler import InputHandler
 from distributed_smb.shared.config import TICK_INTERVAL
-from distributed_smb.shared.enums import NodeState
+from distributed_smb.shared.enums import NodeState, PlayerRole
 from distributed_smb.shared.input import InputState
 
 
@@ -37,10 +37,21 @@ def test_build_runtime_context_exposes_expected_components():
 
     runtime_context = controller.build_runtime_context()
 
-    assert set(runtime_context) == {"engine", "input_handler", "renderer", "tick_interval"}
+    assert set(runtime_context) == {
+        "engine",
+        "input_handler",
+        "local_player_id",
+        "remote_player_id",
+        "renderer",
+        "role",
+        "tick_interval",
+    }
     assert runtime_context["engine"] is controller.engine
     assert runtime_context["input_handler"] is controller.input_handler
+    assert runtime_context["local_player_id"] == controller.local_player_id
+    assert runtime_context["remote_player_id"] == controller.remote_player_id
     assert runtime_context["renderer"] is controller.renderer
+    assert runtime_context["role"] is controller.role
     assert runtime_context["tick_interval"] == controller.tick_interval
     assert isinstance(controller.input_handler.read_input(), InputState)
 
@@ -59,3 +70,44 @@ def test_run_returns_false_when_presentation_runtime_is_missing():
         started = controller.run()
 
     assert started is False
+
+
+def test_host_bootstrap_configures_players_and_role():
+    controller = NodeController().bootstrap(role=PlayerRole.HOST)
+
+    assert controller.role is PlayerRole.HOST
+    assert controller.engine.world_state.get_player(controller.local_player_id) is not None
+    assert controller.engine.world_state.get_player(controller.remote_player_id) is not None
+
+
+def test_host_and_client_bootstrap_use_consistent_player_spawn_positions():
+    host = NodeController().bootstrap(role=PlayerRole.HOST)
+    client = NodeController().bootstrap(role=PlayerRole.CLIENT)
+
+    host_player1 = host.engine.world_state.get_player("player1")
+    host_player2 = host.engine.world_state.get_player("player2")
+    client_player1 = client.engine.world_state.get_player("player1")
+    client_player2 = client.engine.world_state.get_player("player2")
+
+    assert (host_player1.x, host_player1.y) == (client_player1.x, client_player1.y)
+    assert (host_player2.x, host_player2.y) == (client_player2.x, client_player2.y)
+
+
+def test_client_process_frame_increments_input_sequence():
+    controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
+
+    class FakeUdpHandler:
+        def open_socket(self):
+            return None
+
+        def send_packet_nowait(self, payload, remote_host, remote_port):
+            return None
+
+        def receive_packet_nowait(self):
+            return None
+
+    controller.udp_handler = FakeUdpHandler()
+
+    controller.process_frame(TICK_INTERVAL, InputState(right=True))
+
+    assert controller.input_sequence_number == 1
