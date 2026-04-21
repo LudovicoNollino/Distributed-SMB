@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from distributed_smb.domain.collisions import check_collision
+from distributed_smb.domain.collisions import check_collision, resolve_collision
 from distributed_smb.domain.physics import JUMP_FORCE, MOVE_SPEED, apply_physics
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.shared.config import WORLD_SCALE
@@ -42,21 +42,27 @@ class GameEngine:
                 player.on_ground = False
 
     def tick(self, dt, inputs: dict[str, InputState]):
+        for player in self.world_state.characters.values():
+            player.prev_x = player.x
+            player.prev_y = player.y
+
         self.apply_inputs(inputs)
         for player in self.world_state.characters.values():
             apply_physics(player, dt)
         self.handle_collisions()
         self.world_state.sequence_number += 1
 
+    from distributed_smb.domain.collisions import check_collision, resolve_collision
+
+    # ...
+
     def handle_collisions(self) -> None:
         for player in self.world_state.characters.values():
             player.on_ground = False
 
             for platform in self.platforms:
-                if check_collision(player, platform) and player.vy > 0:
-                    player.y = platform.y - player.height
-                    player.vy = 0
-                    player.on_ground = True
+                if check_collision(player, platform):
+                    resolve_collision(player, platform)
 
     def spawn_player(self, player_id: str, x=100, y=100):
         player = CharacterState(player_id=player_id, x=x, y=y)

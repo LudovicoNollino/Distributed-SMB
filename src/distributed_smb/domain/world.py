@@ -17,6 +17,8 @@ class CharacterState:
     width: int = PLAYER_WIDTH
     height: int = PLAYER_HEIGHT
     on_ground: bool = False
+    prev_x: float = 0.0
+    prev_y: float = 0.0
 
 
 @dataclass(slots=True)
