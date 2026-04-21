@@ -42,6 +42,10 @@ class GameEngine:
                 player.on_ground = False
 
     def tick(self, dt, inputs: dict[str, InputState]):
+        for player in self.world_state.characters.values():
+            player.prev_x = player.x
+            player.prev_y = player.y
+
         self.apply_inputs(inputs)
         for player in self.world_state.characters.values():
             apply_physics(player, dt)
@@ -53,10 +57,31 @@ class GameEngine:
             player.on_ground = False
 
             for platform in self.platforms:
-                if check_collision(player, platform) and player.vy > 0:
-                    player.y = platform.y - player.height
-                    player.vy = 0
-                    player.on_ground = True
+                if check_collision(player, platform):
+                    overlap_left = (player.x + player.width) - platform.x
+                    overlap_right = (platform.x + platform.width) - player.x
+                    overlap_top = (player.y + player.height) - platform.y
+                    overlap_bottom = (platform.y + platform.height) - player.y
+
+                    min_overlap = min(overlap_left, overlap_right, overlap_top, overlap_bottom)
+
+                    if min_overlap == overlap_top and player.vy > 0:
+                        if player.prev_y + player.height <= platform.y:
+                            player.y = platform.y - player.height
+                            player.vy = 0
+                            player.on_ground = True
+
+                    elif min_overlap == overlap_bottom and player.vy < 0:
+                        player.y = platform.y + platform.height
+                        player.vy = 0
+
+                    elif min_overlap == overlap_left and player.vx > 0:
+                        player.x = platform.x - player.width
+                        player.vx = 0
+
+                    elif min_overlap == overlap_right and player.vx < 0:
+                        player.x = platform.x + platform.width
+                        player.vx = 0
 
     def spawn_player(self, player_id: str, x=100, y=100):
         player = CharacterState(player_id=player_id, x=x, y=y)
