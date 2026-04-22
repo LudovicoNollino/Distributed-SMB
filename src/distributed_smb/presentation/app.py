@@ -121,6 +121,7 @@ class GameApp:
                 local_input = self.input_handler.read_input()
                 self.frame_handler(dt, local_input)
                 self._clamp_player_to_window(self.local_player_id)
+                self._clamp_player_to_window(self.player2_id)
             self._update_window_caption()
             self.renderer.render(
                 screen=self.screen,
