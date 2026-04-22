@@ -1,13 +1,13 @@
-from distributed_smb.domain.session import SessionInfo
+from distributed_smb.domain.session import GameSession
 from distributed_smb.domain.session_state import SessionState, SessionPhase
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
 def test_session_creation():
     roster = GlobalRoster()
 
-    session = SessionInfo(
+    session = GameSession(
         session_id="abc",
-        owner_id="p1",
+        host_player_id="p1",
         roster=roster
     )
 
