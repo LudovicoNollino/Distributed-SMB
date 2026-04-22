@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from distributed_smb.shared.enums import PlayerRole, SessionState
+from distributed_smb.shared.enums import PlayerRole, SessionPhase
 from distributed_smb.shared.roster import GlobalRoster
 
 
@@ -13,5 +13,5 @@ class GameSession:
     session_id: str
     host_player_id: str | None = None
     roster: GlobalRoster = field(default_factory=GlobalRoster)
-    state: SessionState = SessionState.WAITING
+    state: SessionPhase = SessionPhase.WAITING
     local_role: PlayerRole = PlayerRole.CLIENT
