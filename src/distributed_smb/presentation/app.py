@@ -53,9 +53,12 @@ class GameApp:
                 return True
         return False
 
-    def _clamp_local_player_to_window(self) -> None:
+    def _clamp_local_player_to_window(self, player_id: str) -> None:
         """Keep the local player within the visible screen bounds."""
-        character = self.get_local_player()
+        character = self.engine.world_state.get_player(player_id)
+        if character is None:
+            return
+
         min_x = 0
         max_x = self.width - character.width
         character.x = max(min_x, min(character.x, max_x))
@@ -104,7 +107,8 @@ class GameApp:
                 self.engine.tick(dt, {self.local_player_id: input_player_1, self.player2:input_player_2})
             else:
                 self.frame_handler(dt, {self.local_player_id: input_player_1, self.player2:input_player_2})
-            self._clamp_local_player_to_window()
+            self._clamp_local_player_to_window(self.local_player_id)
+            self._clamp_local_player_to_window(self.player2)
             self._update_window_caption()
             self.renderer.render(
                 screen=self.screen,
