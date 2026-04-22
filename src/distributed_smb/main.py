@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     role_group.add_argument("--client", action="store_true", help="Run the remote client")
     parser.add_argument(
         "--drop-rate",
-        type=float,
+        type=_drop_rate,
         default=DEFAULT_PACKET_DROP_RATE,
         help="Artificial UDP packet loss probability in [0.0, 1.0]",
     )
@@ -57,6 +57,17 @@ def main(
     if run_app:
         controller.run()
     return controller
+
+def _drop_rate(value: str) -> float:
+    """Validate that the drop rate is a float in [0.0, 1.0]."""
+    try:
+        f = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid float value: {value!r}")
+    if not (0.0 <= f <= 1.0):
+        raise argparse.ArgumentTypeError(f"must be in [0.0, 1.0], got {f}")
+    return f
+
 
 
 if __name__ == "__main__":

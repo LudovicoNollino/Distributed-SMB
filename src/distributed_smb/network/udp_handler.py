@@ -71,8 +71,7 @@ class UdpHandler:
             # surface here as a connection reset on the next recv call.
             return None
 
-        if self._should_drop_packet():
-            return None
+
         return packet
 
     def send_packet_nowait(self, payload: bytes, remote_host: str, remote_port: int) -> None:
@@ -96,6 +95,5 @@ class UdpHandler:
             # surface here as a connection reset on the next recv call.
             return None
 
-        if self._should_drop_packet():
-            return None
+
         return packet
