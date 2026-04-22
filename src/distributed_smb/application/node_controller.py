@@ -252,7 +252,7 @@ class NodeController:
         self.udp_handler.send_packet_nowait(payload, self.remote_host, self.remote_port)
         self.sent_input_packets += 1
 
-    '''def process_frame(self, dt: float,  local_input: dict[str, InputState]) -> object:
+    '''def process_frame(self, dt: float,  local_input: InputState) -> object:
         """Advance one frame according to the current runtime role."""
         self.udp_handler.open_socket()
 
