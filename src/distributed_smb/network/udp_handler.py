@@ -66,6 +66,10 @@ class UdpHandler:
                 )
         except TimeoutError:
             return None
+        except ConnectionResetError:
+            # On Windows, sending UDP packets to a peer that is not listening can
+            # surface here as a connection reset on the next recv call.
+            return None
 
         if self._should_drop_packet():
             return None
@@ -86,6 +90,10 @@ class UdpHandler:
         try:
             packet = self._socket.recvfrom(self.max_packet_size)
         except BlockingIOError:
+            return None
+        except ConnectionResetError:
+            # On Windows, sending UDP packets to a peer that is not listening can
+            # surface here as a connection reset on the next recv call.
             return None
 
         if self._should_drop_packet():
