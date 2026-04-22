@@ -14,10 +14,20 @@ class RosterEntry:
     udp_port: int
     join_index: int
     status: ConnectionStatus = ConnectionStatus.CONNECTED
+    isHost: bool = False
 
 
 @dataclass(slots=True)
 class GlobalRoster:
     """Locally replicated view of session participants."""
 
-    entries: dict[str, RosterEntry] = field(default_factory=dict)
+    players: list[RosterEntry] = field(default_factory=list)
+
+    def add_player(self, entry: RosterEntry):
+        self.players.append(entry)
+
+    def get_player(self, player_id: str) -> RosterEntry | None:
+        for p in self.players:
+            if p.player_id == player_id:
+                return p
+        return None
