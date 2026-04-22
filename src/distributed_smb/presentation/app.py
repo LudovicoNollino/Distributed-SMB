@@ -30,7 +30,7 @@ class GameApp:
         default_factory=lambda: InputHandler(control_scheme=ControlScheme.WASD)
     )
     renderer: Renderer = field(default_factory=Renderer)
-    frame_handler: Callable[[float, dict[str, InputState]], WorldState] | None = None
+    frame_handler: Callable[[float, InputState], WorldState] | None = None
 
     def __post_init__(self) -> None:
         pygame.init()
@@ -73,13 +73,6 @@ class GameApp:
             self.player2_id: self.player2_input_handler.read_input(),
         }
 
-    def _advance_frame(self, dt: float, inputs: dict[str, InputState]) -> None:
-        """Advance the simulation through the local engine or injected handler."""
-        if self.frame_handler is None:
-            self.engine.tick(dt, inputs)
-            return
-        self.frame_handler(dt, inputs)
-
     def _build_platform_rects(self) -> list[pygame.Rect]:
         """Translate domain platforms into rectangles that the renderer can draw."""
         return [
@@ -118,10 +111,15 @@ class GameApp:
         while running:
             dt = self.clock.tick(self.fps) / 1000
             running = not self._should_quit()
-            inputs = self._read_inputs()
-            self._advance_frame(dt, inputs)
-            self._clamp_player_to_window(self.local_player_id)
-            self._clamp_player_to_window(self.player2_id)
+            if self.frame_handler is None:
+                inputs = self._read_inputs()
+                self.engine.tick(dt, inputs)
+                self._clamp_player_to_window(self.local_player_id)
+                self._clamp_player_to_window(self.player2_id)
+            else:
+                local_input = self.input_handler.read_input()
+                self.frame_handler(dt, local_input)
+                self._clamp_player_to_window(self.local_player_id)
             self._update_window_caption()
             self.renderer.render(
                 screen=self.screen,
