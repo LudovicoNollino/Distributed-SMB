@@ -58,6 +58,7 @@ def main(
         controller.run()
     return controller
 
+
 def _drop_rate(value: str) -> float:
     """Validate that the drop rate is a float in [0.0, 1.0]."""
     try:
@@ -67,7 +68,6 @@ def _drop_rate(value: str) -> float:
     if not (0.0 <= f <= 1.0):
         raise argparse.ArgumentTypeError(f"must be in [0.0, 1.0], got {f}")
     return f
-
 
 
 if __name__ == "__main__":
