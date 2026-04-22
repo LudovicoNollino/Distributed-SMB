@@ -40,11 +40,11 @@ class InputHandler:
         if self.control_scheme is ControlScheme.WASD:
             left = bool(keys[pygame.K_a])
             right = bool(keys[pygame.K_d])
-            jump = bool(keys[pygame.K_w] or keys[pygame.K_SPACE])
+            jump = bool(keys[pygame.K_w])
         else:
             left = bool(keys[pygame.K_LEFT])
             right = bool(keys[pygame.K_RIGHT])
-            jump = bool(keys[pygame.K_UP] or keys[pygame.K_SPACE])
+            jump = bool(keys[pygame.K_UP])
 
         self.current_input = InputState(
             left=left,
