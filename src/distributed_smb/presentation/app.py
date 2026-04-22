@@ -7,7 +7,7 @@ import pygame
 
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.world import WorldState
-from distributed_smb.presentation.input_handler import InputHandler, ControlScheme
+from distributed_smb.presentation.input_handler import ControlScheme, InputHandler
 from distributed_smb.presentation.renderer import Renderer
 from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
 from distributed_smb.shared.input import InputState
@@ -21,12 +21,12 @@ class GameApp:
     height: int = WINDOW_HEIGHT
     fps: int = 60
     local_player_id: str = "player1"
-    player2:str = "player2"
+    player2_id: str = "player2"
     engine: GameEngine = field(default_factory=GameEngine)
     input_handler: InputHandler = field(
-    default_factory=lambda: InputHandler(control_scheme=ControlScheme.ARROWS)
-)
-    input_handler_player2: InputHandler = field(
+        default_factory=lambda: InputHandler(control_scheme=ControlScheme.ARROWS)
+    )
+    player2_input_handler: InputHandler = field(
         default_factory=lambda: InputHandler(control_scheme=ControlScheme.WASD)
     )
     renderer: Renderer = field(default_factory=Renderer)
@@ -41,10 +41,13 @@ class GameApp:
 
     def _bootstrap_world(self) -> None:
         """Ensure the local player tracked by the engine exists in the world."""
-        if self.get_local_player() is None:
-            self.engine.spawn_player(self.local_player_id)
-        if self.engine.world_state.get_player(self.player2) is None:
-            self.engine.spawn_player(self.player2, x=240, y=100)
+        self._spawn_player_if_missing(self.local_player_id, x=100, y=100)
+        self._spawn_player_if_missing(self.player2_id, x=240, y=100)
+
+    def _spawn_player_if_missing(self, player_id: str, *, x: int, y: int) -> None:
+        """Create one player in the shared world only when it is absent."""
+        if self.engine.world_state.get_player(player_id) is None:
+            self.engine.spawn_player(player_id, x=x, y=y)
 
     def _should_quit(self) -> bool:
         """Return True when the user asks to close the window."""
@@ -53,8 +56,8 @@ class GameApp:
                 return True
         return False
 
-    def _clamp_local_player_to_window(self, player_id: str) -> None:
-        """Keep the local player within the visible screen bounds."""
+    def _clamp_player_to_window(self, player_id: str) -> None:
+        """Keep one player within the visible screen bounds."""
         character = self.engine.world_state.get_player(player_id)
         if character is None:
             return
@@ -62,6 +65,20 @@ class GameApp:
         min_x = 0
         max_x = self.width - character.width
         character.x = max(min_x, min(character.x, max_x))
+
+    def _read_inputs(self) -> dict[str, InputState]:
+        """Collect one shared input snapshot for every local player."""
+        return {
+            self.local_player_id: self.input_handler.read_input(),
+            self.player2_id: self.player2_input_handler.read_input(),
+        }
+
+    def _advance_frame(self, dt: float, inputs: dict[str, InputState]) -> None:
+        """Advance the simulation through the local engine or injected handler."""
+        if self.frame_handler is None:
+            self.engine.tick(dt, inputs)
+            return
+        self.frame_handler(dt, inputs)
 
     def _build_platform_rects(self) -> list[pygame.Rect]:
         """Translate domain platforms into rectangles that the renderer can draw."""
@@ -101,14 +118,10 @@ class GameApp:
         while running:
             dt = self.clock.tick(self.fps) / 1000
             running = not self._should_quit()
-            input_player_1 = self.input_handler.read_input()
-            input_player_2 = self.input_handler_player2.read_input()
-            if self.frame_handler is None:
-                self.engine.tick(dt, {self.local_player_id: input_player_1, self.player2:input_player_2})
-            else:
-                self.frame_handler(dt, {self.local_player_id: input_player_1, self.player2:input_player_2})
-            self._clamp_local_player_to_window(self.local_player_id)
-            self._clamp_local_player_to_window(self.player2)
+            inputs = self._read_inputs()
+            self._advance_frame(dt, inputs)
+            self._clamp_player_to_window(self.local_player_id)
+            self._clamp_player_to_window(self.player2_id)
             self._update_window_caption()
             self.renderer.render(
                 screen=self.screen,
