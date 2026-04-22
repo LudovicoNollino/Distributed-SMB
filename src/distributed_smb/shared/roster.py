@@ -14,7 +14,7 @@ class RosterEntry:
     udp_port: int
     join_index: int
     status: ConnectionStatus = ConnectionStatus.CONNECTED
-    isHost: bool = False
+    is_host: bool = False
 
 
 @dataclass(slots=True)
