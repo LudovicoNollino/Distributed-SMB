@@ -1,5 +1,6 @@
-from distributed_smb.shared.roster import GlobalRoster, RosterEntry, RosterValidationError
 import pytest
+
+from distributed_smb.shared.roster import GlobalRoster, RosterEntry, RosterValidationError
 
 
 def test_add_player():

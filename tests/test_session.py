@@ -1,8 +1,8 @@
 from distributed_smb.domain.session import (
     GameSession,
-    SessionInfo,
     HostMigrationMetadata,
     PeerRejoinMetadata,
+    SessionInfo,
 )
 from distributed_smb.domain.session_state import SessionPhase, SessionState
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry

@@ -1,14 +1,15 @@
 import json
 from dataclasses import asdict
 
+import pytest
+
 from distributed_smb.domain.messages import (
-    RosterUpdate,
-    SessionJoin,
     MessageValidationError,
+    RosterUpdate,
     SessionCreate,
+    SessionJoin,
 )
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry, RosterValidationError
-import pytest
 
 
 def test_message_creation():
