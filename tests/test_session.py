@@ -1,19 +1,17 @@
 from distributed_smb.domain.session import GameSession
-from distributed_smb.domain.session_state import SessionState, SessionPhase
+from distributed_smb.domain.session_state import SessionPhase, SessionState
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
+
 
 def test_session_creation():
     roster = GlobalRoster()
 
-    session = GameSession(
-        session_id="abc",
-        host_player_id="p1",
-        roster=roster
-    )
+    session = GameSession(session_id="abc", host_player_id="p1", roster=roster)
 
     state = SessionState(session_info=session)
 
     assert state.phase == SessionPhase.WAITING
+
 
 def test_full_flow():
     roster = GlobalRoster()

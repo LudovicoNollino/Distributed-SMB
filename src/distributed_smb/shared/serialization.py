@@ -1,6 +1,7 @@
 import json
 from dataclasses import asdict
 
+
 def serialize_message(message) -> str:
     return json.dumps(asdict(message))
 

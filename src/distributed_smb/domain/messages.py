@@ -5,6 +5,7 @@ from enum import StrEnum
 
 from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.input import InputState
+from distributed_smb.shared.roster import GlobalRoster
 
 
 class MessageType(StrEnum):
@@ -37,10 +38,12 @@ class WorldStateSnapshot:
     world_state: WorldState = field(default_factory=WorldState)
     message_type: MessageType = field(init=False, default=MessageType.WORLD_STATE)
 
+
 @dataclass(slots=True)
 class SessionCreate:
     player_id: str
     message_type: MessageType = field(init=False, default=MessageType.SESSION_CREATE)
+
 
 @dataclass(slots=True)
 class SessionJoin:
@@ -50,17 +53,18 @@ class SessionJoin:
     port: int
     message_type: MessageType = field(init=False, default=MessageType.SESSION_JOIN)
 
-from distributed_smb.shared.roster import GlobalRoster
 
 @dataclass(slots=True)
 class RosterUpdate:
     roster: GlobalRoster
     message_type: MessageType = field(init=False, default=MessageType.ROSTER_UPDATE)
 
+
 @dataclass(slots=True)
 class GameStart:
     session_id: str
     message_type: MessageType = field(init=False, default=MessageType.GAME_START)
+
 
 @dataclass(slots=True)
 class InitialStateSync:
