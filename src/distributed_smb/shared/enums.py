@@ -10,7 +10,7 @@ class PlayerRole(StrEnum):
     CLIENT = "client"
 
 
-class SessionState(StrEnum):
+class SessionPhase(StrEnum):
     """Session lifecycle states."""
 
     WAITING = "waiting"
