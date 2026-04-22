@@ -20,6 +20,7 @@ class GameApp:
     width: int = WINDOW_WIDTH
     height: int = WINDOW_HEIGHT
     fps: int = 60
+    max_frame_dt: float = 0.05
     local_player_id: str = "player1"
     player2_id: str = "player2"
     engine: GameEngine = field(default_factory=GameEngine)
@@ -109,7 +110,7 @@ class GameApp:
         running = True
 
         while running:
-            dt = self.clock.tick(self.fps) / 1000
+            dt = min(self.clock.tick(self.fps) / 1000, self.max_frame_dt)
             running = not self._should_quit()
             if self.frame_handler is None:
                 inputs = self._read_inputs()
