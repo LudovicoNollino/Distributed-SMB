@@ -8,7 +8,6 @@ from typing import Any
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
 from distributed_smb.domain.messages import PlayerInputPacket, WorldStateSnapshot
-from distributed_smb.network.lobby_service import LobbyService
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.network.udp_handler import UdpHandler
 from distributed_smb.network.ws_handler import WsHandler
@@ -47,7 +46,6 @@ class NodeController:
     ws_handler: WsHandler = field(
         default_factory=lambda: WsHandler(host=DEFAULT_HOST, port=DEFAULT_TCP_PORT)
     )
-    lobby_service: LobbyService = field(default_factory=LobbyService)
     serializer: Serializer = field(default_factory=Serializer)
     tick_interval: float = TICK_INTERVAL
     is_bootstrapped: bool = False
