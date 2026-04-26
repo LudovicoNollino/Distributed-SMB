@@ -56,7 +56,7 @@ def test_session_join_invalid_session_id():
 
 def test_session_create_invalid_player_id():
     with pytest.raises(MessageValidationError, match="Invalid player_id"):
-        SessionCreate(player_id="")
+        SessionCreate(player_id="", ip="127.0.0.1", udp_port=50010)
 
 
 def test_roster_update_duplicate_join_index():

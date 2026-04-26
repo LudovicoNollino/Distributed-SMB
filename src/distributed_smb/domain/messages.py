@@ -33,15 +33,22 @@ def validate_join_index(join_index: int) -> None:
 
 
 class MessageType(StrEnum):
-    """Types of UDP packets exchanged during the M2 loopback milestone."""
+    """Message types exchanged over UDP (gameplay) and WebSocket (coordination)."""
 
+    # UDP — high-frequency gameplay
     PLAYER_INPUT = "player_input"
     WORLD_STATE = "world_state"
+
+    # WebSocket — lobby coordination (client → lobby)
     SESSION_CREATE = "session_create"
     SESSION_JOIN = "session_join"
-    ROSTER_UPDATE = "roster_update"
     GAME_START = "game_start"
     INITIAL_STATE_SYNC = "initial_state_sync"
+
+    # WebSocket — lobby coordination (lobby → client)
+    SESSION_CREATED = "session_created"
+    SESSION_JOINED = "session_joined"
+    ROSTER_UPDATE = "roster_update"
 
 
 @dataclass(slots=True)
@@ -68,11 +75,18 @@ class WorldStateSnapshot:
 
 @dataclass(slots=True)
 class SessionCreate:
+    """Sent by the host to the lobby to create a new session."""
+
     player_id: str
+    ip: str
+    udp_port: int
     message_type: MessageType = field(init=False, default=MessageType.SESSION_CREATE)
 
     def __post_init__(self):
         validate_player_id(self.player_id)
+        validate_port(self.udp_port)
+        if not self.ip or not isinstance(self.ip, str):
+            raise MessageValidationError(f"Invalid ip: {self.ip}")
 
 
 @dataclass(slots=True)
@@ -90,6 +104,31 @@ class SessionJoin:
             raise MessageValidationError(f"Invalid session_id: {self.session_id}")
         if not self.ip or not isinstance(self.ip, str):
             raise MessageValidationError(f"Invalid ip: {self.ip}")
+
+
+@dataclass(slots=True)
+class SessionCreated:
+    """Sent by the lobby to the host after a session is created successfully."""
+
+    session_id: str
+    join_index: int
+    message_type: MessageType = field(init=False, default=MessageType.SESSION_CREATED)
+
+    def __post_init__(self):
+        if not self.session_id or not isinstance(self.session_id, str):
+            raise MessageValidationError(f"Invalid session_id: {self.session_id}")
+        validate_join_index(self.join_index)
+
+
+@dataclass(slots=True)
+class SessionJoined:
+    """Sent by the lobby to the joining client after a successful join."""
+
+    join_index: int
+    message_type: MessageType = field(init=False, default=MessageType.SESSION_JOINED)
+
+    def __post_init__(self):
+        validate_join_index(self.join_index)
 
 
 @dataclass(slots=True)
