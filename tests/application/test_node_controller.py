@@ -3,9 +3,9 @@ from unittest.mock import patch
 import pygame
 
 from distributed_smb.application.node_controller import NodeController
-from distributed_smb.main import get_controller
+from distributed_smb.main import get_controller, parse_args
 from distributed_smb.presentation.input_handler import InputHandler
-from distributed_smb.shared.config import TICK_INTERVAL
+from distributed_smb.shared.config import DEFAULT_HOST, LOBBY_WS_PORT, TICK_INTERVAL
 from distributed_smb.shared.enums import NodeState, PlayerRole
 from distributed_smb.shared.input import InputState
 
@@ -111,3 +111,26 @@ def test_client_process_frame_increments_input_sequence():
     controller.process_frame(TICK_INTERVAL, InputState(right=True))
 
     assert controller.input_sequence_number == 1
+
+
+def test_parse_args_defaults():
+    args = parse_args([])
+    assert args.host_ip == DEFAULT_HOST
+    assert args.session_id == ""
+    assert not args.host
+    assert not args.client
+
+
+def test_parse_args_client_flags():
+    args = parse_args(["--client", "--host-ip", "192.168.1.10", "--session-id", "abc123"])
+    assert args.client is True
+    assert args.host_ip == "192.168.1.10"
+    assert args.session_id == "abc123"
+
+
+def test_main_client_sets_ws_handler_host():
+    from distributed_smb.main import main
+    controller = main(role=PlayerRole.CLIENT, host_ip="192.168.1.10")
+    assert controller.ws_handler.host == "192.168.1.10"
+    assert controller.ws_handler.port == LOBBY_WS_PORT
+    assert controller.remote_host == "192.168.1.10"

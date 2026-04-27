@@ -2,12 +2,23 @@
 
 import importlib
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
-from distributed_smb.domain.messages import PlayerInputPacket, WorldStateSnapshot
+from distributed_smb.domain.messages import (
+    GameStart,
+    PlayerInputPacket,
+    RosterUpdate,
+    SessionCreate,
+    SessionCreated,
+    SessionJoin,
+    SessionJoined,
+    WorldStateSnapshot,
+)
+from distributed_smb.network.lobby_service import launch_lobby_server
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.network.udp_handler import UdpHandler
 from distributed_smb.network.ws_handler import WsHandler
@@ -18,10 +29,13 @@ from distributed_smb.shared.config import (
     CLIENT_UDP_PORT,
     DEFAULT_HOST,
     DEFAULT_PACKET_DROP_RATE,
-    DEFAULT_TCP_PORT,
     DEFAULT_UDP_PORT,
     HOST_PLAYER_ID,
     HOST_UDP_PORT,
+    LOBBY_STARTUP_WAIT,
+    LOBBY_TIMEOUT,
+    LOBBY_WS_PORT,
+    MIN_PLAYERS_TO_START,
     TICK_INTERVAL,
 )
 from distributed_smb.shared.enums import PlayerRole
@@ -44,8 +58,9 @@ class NodeController:
         default_factory=lambda: UdpHandler(host=DEFAULT_HOST, port=DEFAULT_UDP_PORT)
     )
     ws_handler: WsHandler = field(
-        default_factory=lambda: WsHandler(host=DEFAULT_HOST, port=DEFAULT_TCP_PORT)
+        default_factory=lambda: WsHandler(host=DEFAULT_HOST, port=LOBBY_WS_PORT)
     )
+    session_id: str = ""
     serializer: Serializer = field(default_factory=Serializer)
     tick_interval: float = TICK_INTERVAL
     is_bootstrapped: bool = False
@@ -103,6 +118,109 @@ class NodeController:
         }
         LOGGER.info("Runtime context ready: %s", ", ".join(sorted(context)))
         return context
+
+    def lobby_phase(
+        self,
+        *,
+        session_id: str = "",
+        min_players: int = MIN_PLAYERS_TO_START,
+    ) -> GlobalRoster:
+        """Run the lobby coordination phase before gameplay begins.
+
+        HOST: starts the lobby server, registers itself, waits for enough
+        players, then broadcasts GameStart.
+        CLIENT: joins the session identified by `session_id` and waits for
+        the GameStart broadcast from the host.
+        """
+        if self.role is PlayerRole.HOST:
+            self._host_lobby_phase(min_players=min_players)
+        else:
+            self._client_lobby_phase(session_id=session_id)
+        self._rebuild_world_from_roster()
+        return self.roster
+
+    def _host_lobby_phase(self, *, min_players: int) -> GlobalRoster:
+        launch_lobby_server(port=LOBBY_WS_PORT)
+        time.sleep(LOBBY_STARTUP_WAIT)
+
+        self.ws_handler.connect()
+        self.ws_handler.send(
+            SessionCreate(
+                player_id=self.local_player_id,
+                ip=self.udp_handler.host,
+                udp_port=self.udp_handler.port,
+            )
+        )
+
+        created: SessionCreated = self._poll_lobby(SessionCreated)
+        self.session_id = created.session_id
+        LOGGER.info("Session created: %s", self.session_id)
+
+        deadline = time.time() + LOBBY_TIMEOUT
+        while time.time() < deadline:
+            msg = self.ws_handler.poll()
+            if isinstance(msg, RosterUpdate):
+                self.roster = msg.roster
+                if len(self.roster.players) >= min_players:
+                    break
+            time.sleep(0.05)
+
+        self.ws_handler.send(GameStart(session_id=self.session_id))
+        self._poll_lobby(GameStart)
+        LOGGER.info("Lobby phase complete: %d players", len(self.roster.players))
+
+    def _client_lobby_phase(self, *, session_id: str) -> None:
+        self.ws_handler.connect()
+        self.ws_handler.send(
+            SessionJoin(
+                session_id=session_id,
+                player_id=self.local_player_id,
+                ip=self.udp_handler.host,
+                port=self.udp_handler.port,
+            )
+        )
+
+        self._poll_lobby(SessionJoined)
+
+        deadline = time.time() + LOBBY_TIMEOUT
+        while time.time() < deadline:
+            msg = self.ws_handler.poll()
+            if isinstance(msg, RosterUpdate):
+                self.roster = msg.roster
+            elif isinstance(msg, GameStart):
+                self.session_id = msg.session_id
+                break
+            time.sleep(0.05)
+
+        LOGGER.info("Lobby phase complete: session=%s", self.session_id)
+
+    def _poll_lobby(self, expected_type: type, timeout: float = LOBBY_TIMEOUT) -> Any:
+        """Block until a specific message type arrives on the WsHandler inbox."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            msg = self.ws_handler.poll()
+            if msg is None:
+                time.sleep(0.05)
+                continue
+            if isinstance(msg, RosterUpdate):
+                self.roster = msg.roster
+            if isinstance(msg, expected_type):
+                return msg
+        raise TimeoutError(f"Lobby timeout waiting for {expected_type.__name__}")
+
+    def _rebuild_world_from_roster(self) -> None:
+        """Clear world state and spawn only the players confirmed in the roster."""
+        self.engine.world_state.characters.clear()
+        for entry in self.roster.get_all_players():
+            x, y = self._spawn_position_for(entry.player_id)
+            self.engine.spawn_player(entry.player_id, x=x, y=y)
+        others = [
+            e.player_id
+            for e in self.roster.get_all_players()
+            if e.player_id != self.local_player_id
+        ]
+        if others:
+            self.remote_player_id = others[0]
 
     def _configure_role(self, *, packet_drop_rate: float) -> None:
         """Configure ports and player identities for host or client mode."""
