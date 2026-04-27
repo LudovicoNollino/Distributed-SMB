@@ -26,6 +26,12 @@ dev = [
     "ruff (>=0.14.14,<0.15.0)"
 ]
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:websockets",
+    "ignore::DeprecationWarning:uvicorn",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
