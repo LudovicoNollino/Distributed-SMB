@@ -52,11 +52,11 @@ class InputHandler:
             jump=jump,
         )
 
-        LOGGER.info(
-            "Input snapshot ready: scheme=%s left=%s right=%s jump=%s",
-            self.control_scheme,
-            self.current_input.left,
-            self.current_input.right,
-            self.current_input.jump,
-        )
+        # LOGGER.info(
+        #     "Input snapshot ready: scheme=%s left=%s right=%s jump=%s",
+        #     self.control_scheme,
+        #     self.current_input.left,
+        #     self.current_input.right,
+        #     self.current_input.jump,
+        # )
         return self.current_input

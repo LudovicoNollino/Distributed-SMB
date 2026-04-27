@@ -38,17 +38,6 @@ class GameApp:
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("Distributed SMB")
         self.clock = pygame.time.Clock()
-        self._bootstrap_world()
-
-    def _bootstrap_world(self) -> None:
-        """Ensure the local player tracked by the engine exists in the world."""
-        self._spawn_player_if_missing(self.local_player_id, x=100, y=100)
-        self._spawn_player_if_missing(self.player2_id, x=240, y=100)
-
-    def _spawn_player_if_missing(self, player_id: str, *, x: int, y: int) -> None:
-        """Create one player in the shared world only when it is absent."""
-        if self.engine.world_state.get_player(player_id) is None:
-            self.engine.spawn_player(player_id, x=x, y=y)
 
     def _should_quit(self) -> bool:
         """Return True when the user asks to close the window."""
