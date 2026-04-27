@@ -59,6 +59,7 @@ def reset_lobby():
 # session_create
 # ---------------------------------------------------------------------------
 
+
 def test_connect_and_session_create():
     handler = WsHandler(host="127.0.0.1", port=TEST_PORT)
     handler.connect()
@@ -81,6 +82,7 @@ def test_connect_and_session_create():
 # ---------------------------------------------------------------------------
 # session_join
 # ---------------------------------------------------------------------------
+
 
 def test_session_join_assigns_join_index_1():
     host = WsHandler(host="127.0.0.1", port=TEST_PORT)
@@ -114,6 +116,7 @@ def test_session_join_assigns_join_index_1():
 # game_start
 # ---------------------------------------------------------------------------
 
+
 def test_game_start_received_by_all():
     host = WsHandler(host="127.0.0.1", port=TEST_PORT)
     host.connect()
@@ -125,9 +128,9 @@ def test_game_start_received_by_all():
     client = WsHandler(host="127.0.0.1", port=TEST_PORT)
     client.connect()
     client.send(SessionJoin(session_id=session_id, player_id="client1", ip="127.0.0.1", port=50011))
-    _poll_until(client)   # joined
-    _poll_until(client)   # roster
-    _poll_until(host)     # roster
+    _poll_until(client)  # joined
+    _poll_until(client)  # roster
+    _poll_until(host)  # roster
 
     host.send(GameStart(session_id=session_id))
 

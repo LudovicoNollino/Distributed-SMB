@@ -134,9 +134,7 @@ def test_udp_gameplay_frames_are_exchanged():
     assert host.received_input_packets > 0, (
         "Host received no PlayerInputPacket from client over UDP"
     )
-    assert client.received_snapshots > 0, (
-        "Client received no WorldStateSnapshot from host over UDP"
-    )
+    assert client.received_snapshots > 0, "Client received no WorldStateSnapshot from host over UDP"
 
 
 def test_host_applies_client_input_to_world():

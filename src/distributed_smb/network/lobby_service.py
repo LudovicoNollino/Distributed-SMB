@@ -150,9 +150,7 @@ async def lobby_endpoint(ws: WebSocket) -> None:
             elif message_type == MessageType.SESSION_JOIN:
                 msg: SessionJoin = _serializer.decode_ws_message(data)
                 session_id = msg.session_id
-                join_index = lobby_manager.join_session(
-                    session_id, msg.player_id, msg.ip, msg.port
-                )
+                join_index = lobby_manager.join_session(session_id, msg.player_id, msg.ip, msg.port)
                 lobby_manager.add_connection(session_id, ws)
                 joined = SessionJoined(join_index=join_index)
                 await ws.send_text(json.dumps(_serializer.encode_ws_message(joined)))
@@ -164,9 +162,7 @@ async def lobby_endpoint(ws: WebSocket) -> None:
             elif message_type == MessageType.GAME_START:
                 msg: GameStart = _serializer.decode_ws_message(data)
                 lobby_manager.mark_active(msg.session_id)
-                await lobby_manager.broadcast(
-                    msg.session_id, _serializer.encode_ws_message(msg)
-                )
+                await lobby_manager.broadcast(msg.session_id, _serializer.encode_ws_message(msg))
 
     except WebSocketDisconnect:
         if session_id:

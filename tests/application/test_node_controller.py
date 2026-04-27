@@ -130,6 +130,7 @@ def test_parse_args_client_flags():
 
 def test_main_client_sets_ws_handler_host():
     from distributed_smb.main import main
+
     controller = main(role=PlayerRole.CLIENT, host_ip="192.168.1.10")
     assert controller.ws_handler.host == "192.168.1.10"
     assert controller.ws_handler.port == LOBBY_WS_PORT

@@ -22,12 +22,23 @@ def reset_lobby():
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _create_msg(player_id="host1", ip="127.0.0.1", udp_port=50010):
-    return json.dumps({"message_type": "session_create", "player_id": player_id, "ip": ip, "udp_port": udp_port})
+    return json.dumps(
+        {"message_type": "session_create", "player_id": player_id, "ip": ip, "udp_port": udp_port}
+    )
 
 
 def _join_msg(session_id, player_id="client1", ip="127.0.0.1", port=50011):
-    return json.dumps({"message_type": "session_join", "session_id": session_id, "player_id": player_id, "ip": ip, "port": port})
+    return json.dumps(
+        {
+            "message_type": "session_join",
+            "session_id": session_id,
+            "player_id": player_id,
+            "ip": ip,
+            "port": port,
+        }
+    )
 
 
 def _game_start_msg(session_id):
@@ -37,6 +48,7 @@ def _game_start_msg(session_id):
 # ---------------------------------------------------------------------------
 # session_create
 # ---------------------------------------------------------------------------
+
 
 def test_session_create_returns_session_created():
     with client.websocket_connect("/lobby") as ws:
@@ -59,6 +71,7 @@ def test_session_create_returns_session_created():
 # ---------------------------------------------------------------------------
 # session_join
 # ---------------------------------------------------------------------------
+
 
 def test_session_join_assigns_incremental_join_index():
     with client.websocket_connect("/lobby") as host_ws:
@@ -112,6 +125,7 @@ def test_second_join_gets_join_index_2():
 # game_start
 # ---------------------------------------------------------------------------
 
+
 def test_game_start_broadcast_to_all():
     with client.websocket_connect("/lobby") as host_ws:
         host_ws.send_text(_create_msg())
@@ -123,7 +137,7 @@ def test_game_start_broadcast_to_all():
             client_ws.send_text(_join_msg(session_id))
             client_ws.receive_text()  # joined
             client_ws.receive_text()  # roster
-            host_ws.receive_text()    # roster
+            host_ws.receive_text()  # roster
 
             host_ws.send_text(_game_start_msg(session_id))
 

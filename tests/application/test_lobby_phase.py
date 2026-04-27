@@ -6,12 +6,11 @@ from unittest.mock import patch
 
 import pytest
 
+from distributed_smb.application.node_controller import NodeController
 from distributed_smb.network.lobby_service import launch_lobby_server, lobby_manager
 from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.shared.config import LOBBY_STARTUP_WAIT
 from distributed_smb.shared.enums import PlayerRole
-
-from distributed_smb.application.node_controller import NodeController
 
 TEST_PORT = 59200
 
@@ -46,6 +45,7 @@ def _make_client() -> NodeController:
 # Host-only: min_players=1 so no real client needed
 # ---------------------------------------------------------------------------
 
+
 def test_host_lobby_phase_single_player():
     host = _make_host()
 
@@ -62,6 +62,7 @@ def test_host_lobby_phase_single_player():
 # ---------------------------------------------------------------------------
 # Full flow: host waits for client, then triggers GameStart
 # ---------------------------------------------------------------------------
+
 
 def test_host_and_client_lobby_phase():
     host = _make_host()
