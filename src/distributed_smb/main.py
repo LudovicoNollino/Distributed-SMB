@@ -54,6 +54,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="",
         help="Session ID to join (required when running as client)",
     )
+    parser.add_argument(
+        "--local-ip",
+        type=str,
+        default=DEFAULT_HOST,
+        help="This machine's IP on the LAN, advertised to peers via the lobby",
+    )
     return parser.parse_args(argv)
 
 
@@ -63,12 +69,14 @@ def main(
     role: PlayerRole = PlayerRole.HOST,
     packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
     host_ip: str = DEFAULT_HOST,
+    local_ip: str = DEFAULT_HOST,
     session_id: str = "",
 ) -> NodeController:
     """Bootstrap the local node and start the graphical application."""
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     logging.info("Starting Distributed SMB in %s mode", role)
     controller = build_controller(role=role, packet_drop_rate=packet_drop_rate)
+    controller.local_ip = local_ip
 
     if role is PlayerRole.CLIENT:
         controller.remote_host = host_ip
@@ -99,5 +107,6 @@ if __name__ == "__main__":
         role=selected_role,
         packet_drop_rate=args.drop_rate,
         host_ip=args.host_ip,
+        local_ip=args.local_ip,
         session_id=args.session_id,
     )

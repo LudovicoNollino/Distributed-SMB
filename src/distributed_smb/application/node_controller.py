@@ -61,6 +61,7 @@ class NodeController:
         default_factory=lambda: WsHandler(host=DEFAULT_HOST, port=LOBBY_WS_PORT)
     )
     session_id: str = ""
+    local_ip: str = DEFAULT_HOST
     serializer: Serializer = field(default_factory=Serializer)
     tick_interval: float = TICK_INTERVAL
     is_bootstrapped: bool = False
@@ -147,7 +148,7 @@ class NodeController:
         self.ws_handler.send(
             SessionCreate(
                 player_id=self.local_player_id,
-                ip=self.udp_handler.host,
+                ip=self.local_ip,
                 udp_port=self.udp_handler.port,
             )
         )
@@ -175,7 +176,7 @@ class NodeController:
             SessionJoin(
                 session_id=session_id,
                 player_id=self.local_player_id,
-                ip=self.udp_handler.host,
+                ip=self.local_ip,
                 port=self.udp_handler.port,
             )
         )
@@ -209,18 +210,21 @@ class NodeController:
         raise TimeoutError(f"Lobby timeout waiting for {expected_type.__name__}")
 
     def _rebuild_world_from_roster(self) -> None:
-        """Clear world state and spawn only the players confirmed in the roster."""
+        """Clear world state and spawn only the players confirmed in the roster.
+
+        Also wires remote_host / remote_port from the roster so UDP packets
+        are sent to the peer's real IP even on a LAN (not just 127.0.0.1).
+        """
         self.engine.world_state.characters.clear()
         for entry in self.roster.get_all_players():
             x, y = self._spawn_position_for(entry.player_id)
             self.engine.spawn_player(entry.player_id, x=x, y=y)
-        others = [
-            e.player_id
-            for e in self.roster.get_all_players()
-            if e.player_id != self.local_player_id
-        ]
+        others = [e for e in self.roster.get_all_players() if e.player_id != self.local_player_id]
         if others:
-            self.remote_player_id = others[0]
+            remote = others[0]
+            self.remote_player_id = remote.player_id
+            self.remote_host = remote.host
+            self.remote_port = remote.udp_port
 
     def _configure_role(self, *, packet_drop_rate: float) -> None:
         """Configure ports and player identities for host or client mode."""
@@ -229,7 +233,7 @@ class NodeController:
             self.remote_player_id = CLIENT_PLAYER_ID
             self.input_handler.control_scheme = ControlScheme.ARROWS
             self.udp_handler = UdpHandler(
-                host=DEFAULT_HOST,
+                host="0.0.0.0",
                 port=HOST_UDP_PORT,
                 packet_drop_rate=packet_drop_rate,
             )
@@ -239,7 +243,7 @@ class NodeController:
             self.remote_player_id = HOST_PLAYER_ID
             self.input_handler.control_scheme = ControlScheme.WASD
             self.udp_handler = UdpHandler(
-                host=DEFAULT_HOST,
+                host="0.0.0.0",
                 port=CLIENT_UDP_PORT,
                 packet_drop_rate=packet_drop_rate,
             )
