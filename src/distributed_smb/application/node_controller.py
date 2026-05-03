@@ -44,7 +44,11 @@ from distributed_smb.shared.input import InputState
 from distributed_smb.shared.roster import GlobalRoster
 
 LOGGER = logging.getLogger(__name__)
-LobbyUpdateCallback = Callable[[str, str, GlobalRoster], None]
+LobbyUpdateCallback = Callable[[str, str, GlobalRoster], bool | None]
+
+
+class LobbyCancelledError(RuntimeError):
+    """Raised when the user closes the lobby UI before game start."""
 
 
 @dataclass(slots=True)
@@ -151,7 +155,9 @@ class NodeController:
         on_update: LobbyUpdateCallback | None,
     ) -> None:
         if on_update is not None:
-            on_update(status, self.session_id, self.roster)
+            should_continue = on_update(status, self.session_id, self.roster)
+            if should_continue is False:
+                raise LobbyCancelledError("Lobby was closed before game start")
 
     def _host_lobby_phase(
         self,

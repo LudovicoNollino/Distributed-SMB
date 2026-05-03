@@ -3,7 +3,7 @@
 import argparse
 import logging
 
-from distributed_smb.application.node_controller import NodeController
+from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
 from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.presentation.lobby_screen import LobbyScreen
 from distributed_smb.shared.config import DEFAULT_HOST, DEFAULT_PACKET_DROP_RATE, LOBBY_WS_PORT
@@ -92,16 +92,24 @@ def main(
             roster=controller.roster,
         )
 
-        def update_lobby_screen(status: str, current_session_id: str, roster) -> None:
-            lobby_screen.render(
+        def update_lobby_screen(status: str, current_session_id: str, roster) -> bool:
+            return lobby_screen.render(
                 role=role,
                 status=status,
                 session_id=current_session_id or session_id,
                 roster=roster,
             )
 
-        controller.lobby_phase(session_id=session_id, on_update=update_lobby_screen)
-        lobby_screen.close()
+        try:
+            controller.lobby_phase(session_id=session_id, on_update=update_lobby_screen)
+        except LobbyCancelledError:
+            logging.info("Lobby closed before game start")
+            controller.ws_handler.close()
+            controller.udp_handler.close_socket()
+            return controller
+        finally:
+            lobby_screen.close()
+
         controller.run()
     return controller
 
