@@ -20,6 +20,7 @@ class LobbyScreen:
     text_color: tuple[int, int, int] = (235, 239, 245)
     muted_text_color: tuple[int, int, int] = (160, 170, 185)
     accent_color: tuple[int, int, int] = (96, 180, 140)
+    error_color: tuple[int, int, int] = (235, 105, 105)
     _screen: pygame.Surface = field(init=False, repr=False)
     _title_font: pygame.font.Font = field(init=False, repr=False)
     _body_font: pygame.font.Font = field(init=False, repr=False)
@@ -85,6 +86,38 @@ class LobbyScreen:
         pygame.display.flip()
         return True
 
+    def show_error(self, *, title: str, message: str) -> None:
+        """Keep an error view open until the user closes the window."""
+        pygame.display.set_caption("Distributed SMB - Lobby Error")
+        clock = pygame.time.Clock()
+        while not self.is_closed:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.is_closed = True
+                    break
+
+            self._screen.fill(self.background_color)
+            self._draw_text(title, self._title_font, self.error_color, 48, 72)
+            self._draw_panel(52, 150, self.width - 104, 220)
+            self._draw_wrapped_text(
+                message,
+                self._body_font,
+                self.text_color,
+                78,
+                182,
+                self.width - 156,
+                34,
+            )
+            self._draw_text(
+                "Close this window to exit",
+                self._small_font,
+                self.muted_text_color,
+                78,
+                410,
+            )
+            pygame.display.flip()
+            clock.tick(30)
+
     def close(self) -> None:
         """Close the lobby display surface before the gameplay app takes over."""
         pygame.display.quit()
@@ -107,3 +140,28 @@ class LobbyScreen:
     ) -> None:
         surface = font.render(text, True, color)
         self._screen.blit(surface, (x, y))
+
+    def _draw_wrapped_text(
+        self,
+        text: str,
+        font: pygame.font.Font,
+        color: tuple[int, int, int],
+        x: int,
+        y: int,
+        max_width: int,
+        line_height: int,
+    ) -> None:
+        words = text.split()
+        line = ""
+        current_y = y
+        for word in words:
+            candidate = word if not line else f"{line} {word}"
+            if font.size(candidate)[0] <= max_width:
+                line = candidate
+                continue
+            if line:
+                self._draw_text(line, font, color, x, current_y)
+                current_y += line_height
+            line = word
+        if line:
+            self._draw_text(line, font, color, x, current_y)

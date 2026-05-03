@@ -107,6 +107,15 @@ def main(
             controller.ws_handler.close()
             controller.udp_handler.close_socket()
             return controller
+        except Exception as exc:
+            logging.exception("Lobby failed before game start")
+            controller.ws_handler.close()
+            controller.udp_handler.close_socket()
+            lobby_screen.show_error(
+                title="Lobby connection failed",
+                message=str(exc),
+            )
+            return controller
         finally:
             lobby_screen.close()
 

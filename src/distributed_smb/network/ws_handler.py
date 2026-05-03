@@ -31,6 +31,7 @@ class WsHandler:
     _loop: Any = field(default=None, init=False, repr=False)
     _ws: Any = field(default=None, init=False, repr=False)
     _thread: Any = field(default=None, init=False, repr=False)
+    _connection_error: Exception | None = field(default=None, init=False, repr=False)
 
     def _url(self) -> str:
         return LOBBY_WS_URL_TEMPLATE.format(host=self.host, port=self.port, path=LOBBY_WS_PATH)
@@ -49,18 +50,27 @@ class WsHandler:
 
         self._thread = threading.Thread(target=_run, name="ws-client", daemon=True)
         self._thread.start()
-        ready.wait(timeout=timeout)
+        if not ready.wait(timeout=timeout):
+            raise TimeoutError(f"Timed out connecting to lobby at {self._url()}")
+        if self._connection_error is not None:
+            raise ConnectionError(f"Could not connect to lobby at {self._url()}") from (
+                self._connection_error
+            )
 
     async def _receive_loop(self, ready: threading.Event) -> None:
-        async with ws_connect(self._url()) as ws:
-            self._ws = ws
+        try:
+            async with ws_connect(self._url()) as ws:
+                self._ws = ws
+                ready.set()
+                async for raw in ws:
+                    try:
+                        msg = _serializer.decode_ws_message(json.loads(raw))
+                        self.inbox.put(msg)
+                    except Exception:
+                        pass
+        except Exception as exc:
+            self._connection_error = exc
             ready.set()
-            async for raw in ws:
-                try:
-                    msg = _serializer.decode_ws_message(json.loads(raw))
-                    self.inbox.put(msg)
-                except Exception:
-                    pass
 
     def send(self, message: WsMessage) -> None:
         """Send a coordination message from the game loop thread (thread-safe)."""
