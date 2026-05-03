@@ -5,6 +5,7 @@ import logging
 
 from distributed_smb.application.node_controller import NodeController
 from distributed_smb.network.ws_handler import WsHandler
+from distributed_smb.presentation.lobby_screen import LobbyScreen
 from distributed_smb.shared.config import DEFAULT_HOST, DEFAULT_PACKET_DROP_RATE, LOBBY_WS_PORT
 from distributed_smb.shared.enums import PlayerRole
 
@@ -83,7 +84,24 @@ def main(
         controller.ws_handler = WsHandler(host=host_ip, port=LOBBY_WS_PORT)
 
     if run_app:
-        controller.lobby_phase(session_id=session_id)
+        lobby_screen = LobbyScreen()
+        lobby_screen.render(
+            role=role,
+            status="Preparing lobby",
+            session_id=session_id,
+            roster=controller.roster,
+        )
+
+        def update_lobby_screen(status: str, current_session_id: str, roster) -> None:
+            lobby_screen.render(
+                role=role,
+                status=status,
+                session_id=current_session_id or session_id,
+                roster=roster,
+            )
+
+        controller.lobby_phase(session_id=session_id, on_update=update_lobby_screen)
+        lobby_screen.close()
         controller.run()
     return controller
 

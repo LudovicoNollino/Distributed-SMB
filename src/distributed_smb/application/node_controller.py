@@ -3,6 +3,7 @@
 import importlib
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -43,6 +44,7 @@ from distributed_smb.shared.input import InputState
 from distributed_smb.shared.roster import GlobalRoster
 
 LOGGER = logging.getLogger(__name__)
+LobbyUpdateCallback = Callable[[str, str, GlobalRoster], None]
 
 
 @dataclass(slots=True)
@@ -125,6 +127,7 @@ class NodeController:
         *,
         session_id: str = "",
         min_players: int = MIN_PLAYERS_TO_START,
+        on_update: LobbyUpdateCallback | None = None,
     ) -> GlobalRoster:
         """Run the lobby coordination phase before gameplay begins.
 
@@ -133,17 +136,34 @@ class NodeController:
         CLIENT: joins the session identified by `session_id` and waits for
         the GameStart broadcast from the host.
         """
+        self._notify_lobby_update("Entering lobby", on_update)
         if self.role is PlayerRole.HOST:
-            self._host_lobby_phase(min_players=min_players)
+            self._host_lobby_phase(min_players=min_players, on_update=on_update)
         else:
-            self._client_lobby_phase(session_id=session_id)
+            self._client_lobby_phase(session_id=session_id, on_update=on_update)
         self._rebuild_world_from_roster()
+        self._notify_lobby_update("Starting game", on_update)
         return self.roster
 
-    def _host_lobby_phase(self, *, min_players: int) -> GlobalRoster:
+    def _notify_lobby_update(
+        self,
+        status: str,
+        on_update: LobbyUpdateCallback | None,
+    ) -> None:
+        if on_update is not None:
+            on_update(status, self.session_id, self.roster)
+
+    def _host_lobby_phase(
+        self,
+        *,
+        min_players: int,
+        on_update: LobbyUpdateCallback | None = None,
+    ) -> GlobalRoster:
+        self._notify_lobby_update("Creating lobby server", on_update)
         launch_lobby_server(port=LOBBY_WS_PORT)
         time.sleep(LOBBY_STARTUP_WAIT)
 
+        self._notify_lobby_update("Connecting to lobby", on_update)
         self.ws_handler.connect()
         self.ws_handler.send(
             SessionCreate(
@@ -156,21 +176,32 @@ class NodeController:
         created: SessionCreated = self._poll_lobby(SessionCreated)
         self.session_id = created.session_id
         LOGGER.info("Session created: %s", self.session_id)
+        self._notify_lobby_update("Waiting for players", on_update)
 
         deadline = time.time() + LOBBY_TIMEOUT
         while time.time() < deadline:
             msg = self.ws_handler.poll()
             if isinstance(msg, RosterUpdate):
                 self.roster = msg.roster
+                self._notify_lobby_update("Waiting for players", on_update)
                 if len(self.roster.players) >= min_players:
                     break
+            else:
+                self._notify_lobby_update("Waiting for players", on_update)
             time.sleep(0.05)
 
+        self._notify_lobby_update("Broadcasting game start", on_update)
         self.ws_handler.send(GameStart(session_id=self.session_id))
         self._poll_lobby(GameStart)
         LOGGER.info("Lobby phase complete: %d players", len(self.roster.players))
 
-    def _client_lobby_phase(self, *, session_id: str) -> None:
+    def _client_lobby_phase(
+        self,
+        *,
+        session_id: str,
+        on_update: LobbyUpdateCallback | None = None,
+    ) -> None:
+        self._notify_lobby_update("Connecting to lobby", on_update)
         self.ws_handler.connect()
         self.ws_handler.send(
             SessionJoin(
@@ -182,15 +213,20 @@ class NodeController:
         )
 
         self._poll_lobby(SessionJoined)
+        self._notify_lobby_update("Joined session", on_update)
 
         deadline = time.time() + LOBBY_TIMEOUT
         while time.time() < deadline:
             msg = self.ws_handler.poll()
             if isinstance(msg, RosterUpdate):
                 self.roster = msg.roster
+                self._notify_lobby_update("Waiting for game start", on_update)
             elif isinstance(msg, GameStart):
                 self.session_id = msg.session_id
+                self._notify_lobby_update("Starting game", on_update)
                 break
+            else:
+                self._notify_lobby_update("Waiting for game start", on_update)
             time.sleep(0.05)
 
         LOGGER.info("Lobby phase complete: session=%s", self.session_id)
