@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 
 import pygame
+import pygame.scrap
 
 from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
 from distributed_smb.shared.enums import PlayerRole
@@ -34,6 +35,73 @@ class LobbyScreen:
         self._title_font = pygame.font.Font(None, 48)
         self._body_font = pygame.font.Font(None, 30)
         self._small_font = pygame.font.Font(None, 24)
+
+    def prompt_join_details(
+        self,
+        *,
+        initial_host_ip: str,
+        initial_session_id: str = "",
+    ) -> tuple[str, str] | None:
+        """Collect host IP and session ID from the client before joining."""
+        pygame.display.set_caption("Distributed SMB - Join Session")
+        pygame.key.start_text_input()
+        pygame.scrap.init()
+        clock = pygame.time.Clock()
+        host_ip = initial_host_ip
+        session_id = initial_session_id
+        active_field = "session_id"
+        error_message = ""
+
+        while not self.is_closed:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.is_closed = True
+                    pygame.key.stop_text_input()
+                    return None
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        self.is_closed = True
+                        pygame.key.stop_text_input()
+                        return None
+                    if event.key == pygame.K_TAB:
+                        active_field = "host_ip" if active_field == "session_id" else "session_id"
+                    elif event.key == pygame.K_RETURN:
+                        if host_ip.strip() and session_id.strip():
+                            pygame.key.stop_text_input()
+                            return host_ip.strip(), session_id.strip()
+                        error_message = "Host IP and Session ID are required"
+                    elif event.key == pygame.K_BACKSPACE:
+                        if active_field == "host_ip":
+                            host_ip = host_ip[:-1]
+                        else:
+                            session_id = session_id[:-1]
+                    elif event.key == pygame.K_v and event.mod & pygame.KMOD_CTRL:
+                        pasted_text = self._get_clipboard_text()
+                        if active_field == "host_ip":
+                            host_ip = (host_ip + pasted_text)[:64]
+                        else:
+                            session_id = (session_id + pasted_text)[:96]
+                    elif event.unicode and event.unicode.isprintable():
+                        if active_field == "host_ip" and len(host_ip) < 64:
+                            host_ip += event.unicode
+                        elif active_field == "session_id" and len(session_id) < 96:
+                            session_id += event.unicode
+                elif event.type == pygame.TEXTINPUT and event.text.isprintable():
+                    if active_field == "host_ip" and len(host_ip) < 64:
+                        host_ip += event.text
+                    elif active_field == "session_id" and len(session_id) < 96:
+                        session_id += event.text
+
+            self._render_join_form(
+                host_ip=host_ip,
+                session_id=session_id,
+                active_field=active_field,
+                error_message=error_message,
+            )
+            clock.tick(30)
+
+        pygame.key.stop_text_input()
+        return None
 
     def render(
         self,
@@ -130,6 +198,70 @@ class LobbyScreen:
             border_radius=8,
         )
 
+    def _render_join_form(
+        self,
+        *,
+        host_ip: str,
+        session_id: str,
+        active_field: str,
+        error_message: str,
+    ) -> None:
+        self._screen.fill(self.background_color)
+        self._draw_text("Join Session", self._title_font, self.text_color, 48, 54)
+        self._draw_text(
+            "Enter the host IP and Session ID",
+            self._body_font,
+            self.muted_text_color,
+            52,
+            112,
+        )
+
+        self._draw_join_field(
+            label="Host IP",
+            value=host_ip,
+            x=52,
+            y=180,
+            is_active=active_field == "host_ip",
+        )
+        self._draw_join_field(
+            label="Session ID",
+            value=session_id,
+            x=52,
+            y=300,
+            is_active=active_field == "session_id",
+        )
+
+        if error_message:
+            self._draw_text(error_message, self._small_font, self.error_color, 58, 430)
+        self._draw_text(
+            "TAB changes field  |  ENTER joins  |  ESC cancels",
+            self._small_font,
+            self.muted_text_color,
+            58,
+            472,
+        )
+        pygame.display.flip()
+
+    def _draw_join_field(
+        self,
+        *,
+        label: str,
+        value: str,
+        x: int,
+        y: int,
+        is_active: bool,
+    ) -> None:
+        self._draw_text(label, self._small_font, self.muted_text_color, x + 4, y)
+        rect = pygame.Rect(x, y + 30, self.width - 104, 58)
+        pygame.draw.rect(self._screen, self.panel_color, rect, border_radius=8)
+        border_color = self.accent_color if is_active else self.muted_text_color
+        pygame.draw.rect(self._screen, border_color, rect, width=2, border_radius=8)
+        display_value = value if value else "type here"
+        if is_active:
+            display_value = f"{display_value}|"
+        color = self.text_color if value else self.muted_text_color
+        self._draw_text(display_value, self._body_font, color, x + 20, y + 46)
+
     def _draw_text(
         self,
         text: str,
@@ -165,3 +297,12 @@ class LobbyScreen:
             line = word
         if line:
             self._draw_text(line, font, color, x, current_y)
+
+    def _get_clipboard_text(self) -> str:
+        try:
+            clipboard = pygame.scrap.get(pygame.SCRAP_TEXT)
+        except pygame.error:
+            return ""
+        if clipboard is None:
+            return ""
+        return clipboard.decode("utf-8", errors="ignore").replace("\x00", "").strip()

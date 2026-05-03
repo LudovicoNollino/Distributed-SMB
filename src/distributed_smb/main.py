@@ -79,12 +79,24 @@ def main(
     controller = build_controller(role=role, packet_drop_rate=packet_drop_rate)
     controller.local_ip = local_ip
 
-    if role is PlayerRole.CLIENT:
-        controller.remote_host = host_ip
-        controller.ws_handler = WsHandler(host=host_ip, port=LOBBY_WS_PORT)
-
     if run_app:
         lobby_screen = LobbyScreen()
+        if role is PlayerRole.CLIENT and not session_id:
+            join_details = lobby_screen.prompt_join_details(
+                initial_host_ip=host_ip,
+                initial_session_id=session_id,
+            )
+            if join_details is None:
+                logging.info("Client join cancelled before connecting to lobby")
+                controller.udp_handler.close_socket()
+                lobby_screen.close()
+                return controller
+            host_ip, session_id = join_details
+
+        if role is PlayerRole.CLIENT:
+            controller.remote_host = host_ip
+            controller.ws_handler = WsHandler(host=host_ip, port=LOBBY_WS_PORT)
+
         lobby_screen.render(
             role=role,
             status="Preparing lobby",
@@ -120,6 +132,9 @@ def main(
             lobby_screen.close()
 
         controller.run()
+    elif role is PlayerRole.CLIENT:
+        controller.remote_host = host_ip
+        controller.ws_handler = WsHandler(host=host_ip, port=LOBBY_WS_PORT)
     return controller
 
 
