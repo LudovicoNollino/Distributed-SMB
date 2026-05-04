@@ -2,13 +2,12 @@
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Optional, Dict, Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
+
 from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.roster import GlobalRoster
-
 
 
 class MessageValidationError(ValueError):
