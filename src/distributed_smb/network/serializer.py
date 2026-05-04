@@ -4,17 +4,28 @@ import json
 from dataclasses import asdict, is_dataclass
 from typing import Any, Union
 
+from pydantic import ValidationError
+
 from distributed_smb.domain.messages import (
     GameStart,
+    GameStartSchema,
     InitialStateSync,
+    InitialStateSyncSchema,
     MessageType,
     PlayerInputPacket,
+    PlayerInputSchema,
     RosterUpdate,
+    RosterUpdateSchema,
     SessionCreate,
+    SessionCreateSchema,
     SessionCreated,
+    SessionCreatedSchema,
     SessionJoin,
+    SessionJoinSchema,
     SessionJoined,
+    SessionJoinedSchema,
     WorldStateSnapshot,
+    WorldStateSchema,
 )
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.shared.enums import ConnectionStatus
@@ -31,6 +42,11 @@ WsMessage = Union[
     GameStart,
     InitialStateSync,
 ]
+
+
+class DeserializationError(ValueError):
+    """Raised when deserialization fails."""
+    pass
 
 
 class Serializer:
@@ -61,28 +77,34 @@ class Serializer:
         data = self.decode(payload)
         message_type = data.get("message_type")
 
-        if message_type == MessageType.PLAYER_INPUT:
-            return PlayerInputPacket(
-                player_id=data["player_id"],
-                sequence_number=data["sequence_number"],
-                input_state=InputState(**data["input_state"]),
-            )
+        try:
+            if message_type == MessageType.PLAYER_INPUT:
+                validated = PlayerInputSchema(**data)
+                return PlayerInputPacket(
+                    player_id=validated.player_id,
+                    sequence_number=validated.sequence_number,
+                    input_state=InputState(**validated.input_state),
+                )
 
-        if message_type == MessageType.WORLD_STATE:
-            characters = {
-                player_id: CharacterState(**character_data)
-                for player_id, character_data in data["world_state"]["characters"].items()
-            }
-            world_state = WorldState(
-                sequence_number=data["world_state"]["sequence_number"],
-                characters=characters,
-            )
-            return WorldStateSnapshot(
-                sequence_number=data["sequence_number"],
-                world_state=world_state,
-            )
+            if message_type == MessageType.WORLD_STATE:
+                validated = WorldStateSchema(**data)
+                characters = {
+                    player_id: CharacterState(**character_data)
+                    for player_id, character_data in validated.world_state["characters"].items()
+                }
+                world_state = WorldState(
+                    sequence_number=validated.world_state["sequence_number"],
+                    characters=characters,
+                )
+                return WorldStateSnapshot(
+                    sequence_number=validated.sequence_number,
+                    world_state=world_state,
+                )
 
-        raise ValueError(f"Unsupported UDP message type: {message_type}")
+            raise DeserializationError(f"Unsupported UDP message type: {message_type}")
+
+        except ValidationError as e:
+            raise DeserializationError(f"Invalid UDP message format: {e.errors()}")
 
     # ------------------------------------------------------------------
     # WebSocket transport
@@ -100,56 +122,70 @@ class Serializer:
         """Decode a dict received from a WebSocket into a typed message."""
         message_type = data.get("message_type")
 
-        if message_type == MessageType.SESSION_CREATE:
-            return SessionCreate(
-                player_id=data["player_id"],
-                ip=data["ip"],
-                udp_port=data["udp_port"],
-            )
-
-        if message_type == MessageType.SESSION_CREATED:
-            return SessionCreated(
-                session_id=data["session_id"],
-                join_index=data["join_index"],
-            )
-
-        if message_type == MessageType.SESSION_JOIN:
-            return SessionJoin(
-                session_id=data["session_id"],
-                player_id=data["player_id"],
-                ip=data["ip"],
-                port=data["port"],
-            )
-
-        if message_type == MessageType.SESSION_JOINED:
-            return SessionJoined(join_index=data["join_index"])
-
-        if message_type == MessageType.ROSTER_UPDATE:
-            roster = GlobalRoster()
-            for entry in data["roster"]["players"]:
-                roster.add_player(
-                    RosterEntry(
-                        player_id=entry["player_id"],
-                        host=entry["host"],
-                        udp_port=entry["udp_port"],
-                        join_index=entry["join_index"],
-                        status=ConnectionStatus(entry["status"]),
-                        is_host=entry["is_host"],
-                    )
+        try:
+            if message_type == MessageType.SESSION_CREATE:
+                validated = SessionCreateSchema(**data)
+                return SessionCreate(
+                    player_id=validated.player_id,
+                    ip=validated.ip,
+                    udp_port=validated.udp_port,
                 )
-            return RosterUpdate(roster=roster)
 
-        if message_type == MessageType.GAME_START:
-            return GameStart(session_id=data["session_id"])
+            if message_type == MessageType.SESSION_CREATED:
+                validated = SessionCreatedSchema(**data)
+                return SessionCreated(
+                    session_id=validated.session_id,
+                    join_index=validated.join_index,
+                )
 
-        if message_type == MessageType.INITIAL_STATE_SYNC:
-            characters = {
-                pid: CharacterState(**cs) for pid, cs in data["world_state"]["characters"].items()
-            }
-            world_state = WorldState(
-                sequence_number=data["world_state"]["sequence_number"],
-                characters=characters,
+            if message_type == MessageType.SESSION_JOIN:
+                validated = SessionJoinSchema(**data)
+                return SessionJoin(
+                    session_id=validated.session_id,
+                    player_id=validated.player_id,
+                    ip=validated.ip,
+                    port=validated.port,
+                )
+
+            if message_type == MessageType.SESSION_JOINED:
+                validated = SessionJoinedSchema(**data)
+                return SessionJoined(join_index=validated.join_index)
+
+            if message_type == MessageType.ROSTER_UPDATE:
+                validated = RosterUpdateSchema(**data)
+                roster = GlobalRoster()
+                for entry_data in validated.roster.players:
+                    roster.add_player(
+                        RosterEntry(
+                            player_id=entry_data.player_id,
+                            host=entry_data.host,
+                            udp_port=entry_data.udp_port,
+                            join_index=entry_data.join_index,
+                            status=ConnectionStatus(entry_data.status),
+                            is_host=entry_data.is_host,
+                        )
+                    )
+                return RosterUpdate(roster=roster)
+
+            if message_type == MessageType.GAME_START:
+                validated = GameStartSchema(**data)
+                return GameStart(session_id=validated.session_id)
+
+            if message_type == MessageType.INITIAL_STATE_SYNC:
+                validated = InitialStateSyncSchema(**data)
+                characters = {
+                    pid: CharacterState(**cs)
+                    for pid, cs in validated.world_state["characters"].items()
+                }
+                world_state = WorldState(
+                    sequence_number=validated.world_state["sequence_number"],
+                    characters=characters,
+                )
+                return InitialStateSync(world_state=world_state)
+
+            raise DeserializationError(f"Unsupported WebSocket message type: {message_type}")
+
+        except ValidationError as e:
+            raise DeserializationError(
+                f"Invalid WebSocket message format (type: {message_type}): {e.errors()}"
             )
-            return InitialStateSync(world_state=world_state)
-
-        raise ValueError(f"Unsupported WebSocket message type: {message_type}")
