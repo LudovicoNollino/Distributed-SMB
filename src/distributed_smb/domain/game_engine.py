@@ -47,12 +47,12 @@ class GameEngine:
             player.prev_y = player.y
 
         self.apply_inputs(inputs)
-
         for player in self.world_state.characters.values():
             apply_physics(player, dt)
 
         self.handle_collisions()
-        self.handle_environment_collisions()
+        self.handle_powerup_collisions()
+        self.handle_gate_state()
         self.world_state.sequence_number += 1
 
     from distributed_smb.domain.collisions import check_collision, resolve_collision
@@ -67,17 +67,9 @@ class GameEngine:
                 if check_collision(player, platform):
                     resolve_collision(player, platform)
 
-    def spawn_player(self, player_id: str, x=100, y=100):
-        player = CharacterState(player_id=player_id, x=x, y=y)
+    def spawn_player(self, player_id: str, x=100, y=100, join_index: int = 0):
+        player = CharacterState(player_id=player_id, x=x, y=y, join_index=join_index)
         self.world_state.add_player(player)
-
-
-class Platform:
-    def __init__(self, x: int, y: int, width: int, height: int) -> None:
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
 
     def handle_environment_collisions(self) -> None:
         self.handle_block_collisions()
@@ -92,11 +84,22 @@ class Platform:
                     self.events.append(event)
 
     def handle_powerup_collisions(self) -> None:
-        for player in self.world_state.characters.values():
-            for power_up in self.world_state.power_ups.values():
-                if not power_up.collected and check_collision(player, power_up):
-                    event = power_up.collect(player.player_id)
-                    self.events.append(event)
+        for power_up in self.world_state.power_ups.values():
+            if power_up.collected:
+                continue
+
+            colliding_players = [
+                player
+                for player in self.world_state.characters.values()
+                if check_collision(player, power_up)
+            ]
+
+            if not colliding_players:
+                continue
+
+            winner = min(colliding_players, key=lambda p: p.join_index)
+            event = power_up.collect(winner.player_id)
+            self.events.append(event)
 
     def handle_gate_state(self) -> None:
         active_players = self.world_state.get_all_players_dict().keys()
@@ -104,3 +107,12 @@ class Platform:
             event = gate.update_state(active_players)
             if event is not None:
                 self.events.append(event)
+
+class Platform:
+    def __init__(self, x: int, y: int, width: int, height: int) -> None:
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+
+    

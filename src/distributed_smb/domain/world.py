@@ -19,6 +19,7 @@ class CharacterState:
     on_ground: bool = False
     prev_x: float = 0.0
     prev_y: float = 0.0
+    join_index: int = 0
 
 
 @dataclass(slots=True)
