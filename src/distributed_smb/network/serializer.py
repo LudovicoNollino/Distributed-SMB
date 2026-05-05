@@ -7,13 +7,23 @@ from typing import Any, Union
 from pydantic import ValidationError
 
 from distributed_smb.domain.messages import (
+    BlockDestroyedEvent,
+    BlockDestroyedEventSchema,
     GameStart,
     GameStartSchema,
+    GateStateChangedEvent,
+    GateStateChangedEventSchema,
     InitialStateSync,
     InitialStateSyncSchema,
     MessageType,
+    PlayerDisconnected,
+    PlayerDisconnectedSchema,
     PlayerInputPacket,
     PlayerInputSchema,
+    PlayerLeft,
+    PlayerLeftSchema,
+    PowerUpCollectedEvent,
+    PowerUpCollectedEventSchema,
     RosterUpdate,
     RosterUpdateSchema,
     SessionCreate,
@@ -27,6 +37,8 @@ from distributed_smb.domain.messages import (
     WorldStateSchema,
     WorldStateSnapshot,
 )
+
+from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.input import InputState
@@ -41,6 +53,11 @@ WsMessage = Union[
     RosterUpdate,
     GameStart,
     InitialStateSync,
+    BlockDestroyedEvent,
+    PowerUpCollectedEvent,
+    GateStateChangedEvent,
+    PlayerLeft,
+    PlayerDisconnected,
 ]
 
 
@@ -183,6 +200,32 @@ class Serializer:
                     characters=characters,
                 )
                 return InitialStateSync(world_state=world_state)
+
+            if message_type == MessageType.BLOCK_DESTROYED_EVENT:
+                validated = BlockDestroyedEventSchema(**data)
+                return BlockDestroyedEvent(position=tuple(validated.position))
+
+            if message_type == MessageType.POWERUP_COLLECTED_EVENT:
+                validated = PowerUpCollectedEventSchema(**data)
+                return PowerUpCollectedEvent(
+                    powerup_id=validated.powerup_id,
+                    player_id=validated.player_id,
+                )
+
+            if message_type == MessageType.GATE_STATE_CHANGED_EVENT:
+                validated = GateStateChangedEventSchema(**data)
+                return GateStateChangedEvent(
+                    gate_id=validated.gate_id,
+                    new_state=validated.new_state,
+                )
+
+            if message_type == MessageType.PLAYER_LEFT:
+                validated = PlayerLeftSchema(**data)
+                return PlayerLeft(player_id=validated.player_id)
+
+            if message_type == MessageType.PLAYER_DISCONNECTED:
+                validated = PlayerDisconnectedSchema(**data)
+                return PlayerDisconnected(player_id=validated.player_id)
 
             raise DeserializationError(f"Unsupported WebSocket message type: {message_type}")
 

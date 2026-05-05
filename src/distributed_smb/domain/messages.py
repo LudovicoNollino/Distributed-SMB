@@ -52,6 +52,12 @@ class MessageType(StrEnum):
     SESSION_JOINED = "session_joined"
     ROSTER_UPDATE = "roster_update"
 
+    BLOCK_DESTROYED_EVENT = "block_destroyed_event"
+    POWERUP_COLLECTED_EVENT = "powerup_collected_event"
+    GATE_STATE_CHANGED_EVENT = "gate_state_changed_event"
+    PLAYER_LEFT = "player_left"
+    PLAYER_DISCONNECTED = "player_disconnected"
+
 
 @dataclass(slots=True)
 class PlayerInputPacket:
@@ -160,6 +166,61 @@ class InitialStateSync:
     world_state: WorldState
     message_type: MessageType = field(init=False, default=MessageType.INITIAL_STATE_SYNC)
 
+@dataclass(slots=True)
+class BlockDestroyedEvent:
+    position: tuple[int, int]
+    message_type: MessageType = field(init=False, default=MessageType.BLOCK_DESTROYED_EVENT)
+
+    def __post_init__(self):
+        if (
+            not isinstance(self.position, tuple)
+            or len(self.position) != 2
+            or not all(isinstance(coord, int) for coord in self.position)
+        ):
+            raise MessageValidationError(f"Invalid position: {self.position}")
+
+
+@dataclass(slots=True)
+class PowerUpCollectedEvent:
+    powerup_id: str
+    player_id: str
+    message_type: MessageType = field(init=False, default=MessageType.POWERUP_COLLECTED_EVENT)
+
+    def __post_init__(self):
+        if not self.powerup_id or not isinstance(self.powerup_id, str):
+            raise MessageValidationError(f"Invalid powerup_id: {self.powerup_id}")
+        validate_player_id(self.player_id)
+
+
+@dataclass(slots=True)
+class GateStateChangedEvent:
+    gate_id: str
+    new_state: str
+    message_type: MessageType = field(init=False, default=MessageType.GATE_STATE_CHANGED_EVENT)
+
+    def __post_init__(self):
+        if not self.gate_id or not isinstance(self.gate_id, str):
+            raise MessageValidationError(f"Invalid gate_id: {self.gate_id}")
+        if not self.new_state or not isinstance(self.new_state, str):
+            raise MessageValidationError(f"Invalid new_state: {self.new_state}")
+
+
+@dataclass(slots=True)
+class PlayerLeft:
+    player_id: str
+    message_type: MessageType = field(init=False, default=MessageType.PLAYER_LEFT)
+
+    def __post_init__(self):
+        validate_player_id(self.player_id)
+
+
+@dataclass(slots=True)
+class PlayerDisconnected:
+    player_id: str
+    message_type: MessageType = field(init=False, default=MessageType.PLAYER_DISCONNECTED)
+
+    def __post_init__(self):
+        validate_player_id(self.player_id)
 
 class PlayerInputSchema(BaseModel):
     """Schema for UDP PlayerInputPacket validation."""
@@ -248,3 +309,29 @@ class InitialStateSyncSchema(BaseModel):
 
     world_state: dict = Field(...)
     message_type: str = Field(default="initial_state_sync")
+
+class BlockDestroyedEventSchema(BaseModel):
+    position: list[int] = Field(..., min_items=2, max_items=2)
+    message_type: str = Field(default="block_destroyed_event")
+
+
+class PowerUpCollectedEventSchema(BaseModel):
+    powerup_id: str = Field(..., min_length=1)
+    player_id: str = Field(..., min_length=1)
+    message_type: str = Field(default="powerup_collected_event")
+
+
+class GateStateChangedEventSchema(BaseModel):
+    gate_id: str = Field(..., min_length=1)
+    new_state: str = Field(..., min_length=1)
+    message_type: str = Field(default="gate_state_changed_event")
+
+
+class PlayerLeftSchema(BaseModel):
+    player_id: str = Field(..., min_length=1)
+    message_type: str = Field(default="player_left")
+
+
+class PlayerDisconnectedSchema(BaseModel):
+    player_id: str = Field(..., min_length=1)
+    message_type: str = Field(default="player_disconnected")
