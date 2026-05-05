@@ -260,7 +260,7 @@ class NodeController:
         self.engine.world_state.characters.clear()
         for entry in self.roster.get_all_players():
             x, y = self._spawn_position_for(entry.player_id)
-            self.engine.spawn_player(entry.player_id, x=x, y=y)
+            self.engine.spawn_player(entry.player_id, x=x, y=y, join_index=entry.join_index)
         others = [e for e in self.roster.get_all_players() if e.player_id != self.local_player_id]
         if others:
             remote = others[0]

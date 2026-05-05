@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from distributed_smb.domain.world import EnvironmentalState
 from distributed_smb.shared.enums import PlayerRole, SessionPhase
 from distributed_smb.shared.roster import GlobalRoster
 
@@ -26,7 +27,7 @@ class HostMigrationMetadata:
     election_in_progress: bool = False
     election_candidate_ids: list[str] = field(default_factory=list)
     migration_version: int = 0
-
+    preserved_environment: EnvironmentalState | None = None
 
 @dataclass(slots=True)
 class PeerRejoinMetadata:

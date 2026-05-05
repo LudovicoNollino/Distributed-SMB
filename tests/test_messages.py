@@ -76,3 +76,53 @@ def test_roster_update_validates_on_message():
     # Should not raise - valid roster
     msg = RosterUpdate(roster=roster)
     assert len(msg.roster.players) == 2
+
+import json
+from dataclasses import asdict
+
+from distributed_smb.domain.messages import (
+    BlockDestroyedEvent,
+    GateStateChangedEvent,
+    PlayerDisconnected,
+    PlayerLeft,
+    PowerUpCollectedEvent,
+    MessageValidationError,
+)
+
+
+def test_player_left_message():
+    msg = PlayerLeft(player_id="player1")
+
+    assert msg.message_type.value == "player_left"
+    assert msg.player_id == "player1"
+
+    data = json.loads(json.dumps(asdict(msg)))
+    assert data["player_id"] == "player1"
+
+
+def test_player_disconnected_message():
+    msg = PlayerDisconnected(player_id="player2")
+
+    assert msg.message_type.value == "player_disconnected"
+    assert msg.player_id == "player2"
+
+
+def test_block_destroyed_event_message():
+    msg = BlockDestroyedEvent(position=(1, 2))
+
+    assert msg.message_type.value == "block_destroyed_event"
+    assert msg.position == (1, 2)
+
+
+def test_powerup_collected_event_message():
+    msg = PowerUpCollectedEvent(powerup_id="power1", player_id="player1")
+
+    assert msg.message_type.value == "powerup_collected_event"
+    assert msg.player_id == "player1"
+
+
+def test_gate_state_changed_event_message():
+    msg = GateStateChangedEvent(gate_id="gate1", new_state="open")
+
+    assert msg.message_type.value == "gate_state_changed_event"
+    assert msg.new_state == "open"

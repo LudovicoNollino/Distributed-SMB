@@ -81,3 +81,22 @@ def test_game_session_initialize_rejoin():
     session.initialize_rejoin_metadata()
 
     assert session.rejoin_metadata is not None
+
+from distributed_smb.domain.session import GameSession, HostMigrationMetadata
+from distributed_smb.domain.world import EnvironmentalState
+from distributed_smb.domain.entity import DestructibleBlock
+
+
+def test_host_migration_metadata_can_preserve_environment():
+    session = GameSession(session_id="session1", host_player_id="host1")
+    session.initialize_migration_metadata()
+
+    assert session.migration_metadata is not None
+    assert isinstance(session.migration_metadata, HostMigrationMetadata)
+
+    env = EnvironmentalState()
+    env.destructible_blocks.append(DestructibleBlock(x=5, y=5))
+    session.migration_metadata.preserved_environment = env
+
+    assert session.migration_metadata.preserved_environment is env
+    assert session.migration_metadata.preserved_environment.destructible_blocks[0].x == 5
