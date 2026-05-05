@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 
 from distributed_smb.shared.config import PLAYER_HEIGHT, PLAYER_WIDTH
 from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
-
 @dataclass(slots=True)
 class CharacterState:
     """Minimal dynamic state for a controllable character."""
@@ -21,6 +20,11 @@ class CharacterState:
     prev_y: float = 0.0
     join_index: int = 0
 
+@dataclass(slots=True)
+class EnvironmentalState:
+    destructible_blocks: list[DestructibleBlock] = field(default_factory=list)
+    power_ups: dict[str, ExclusivePowerUp] = field(default_factory=dict)
+    cooperative_gates: dict[str, CooperativeGate] = field(default_factory=dict)
 
 @dataclass(slots=True)
 class WorldState:
@@ -28,9 +32,7 @@ class WorldState:
 
     sequence_number: int = 0
     characters: dict[str, CharacterState] = field(default_factory=dict)
-    destructible_blocks: list[DestructibleBlock] = field(default_factory=list)
-    power_ups: dict[str, ExclusivePowerUp] = field(default_factory=dict)
-    cooperative_gates: dict[str, CooperativeGate] = field(default_factory=dict)
+    environment: EnvironmentalState = field(default_factory=EnvironmentalState)
 
     def add_player(self, character: CharacterState):
         self.characters[character.player_id] = character
@@ -49,22 +51,23 @@ class WorldState:
         return self.characters
     
     def add_block(self, block: DestructibleBlock) -> None:
-        self.destructible_blocks.append(block)
+        self.environment.destructible_blocks.append(block)
 
     def get_block(self, position: tuple[int, int]) -> DestructibleBlock | None:
-        return next(
-            (block for block in self.destructible_blocks if block.position == position),
-            None,
-        )
+        for block in self.environment.destructible_blocks:
+            if block.position == position:
+                return block
+        return None
 
     def add_power_up(self, power_up: ExclusivePowerUp) -> None:
-        self.power_ups[power_up.powerup_id] = power_up
+        self.environment.power_ups[power_up.id] = power_up
 
     def get_power_up(self, powerup_id: str) -> ExclusivePowerUp | None:
-        return self.power_ups.get(powerup_id)
+        return self.environment.power_ups.get(powerup_id)
 
     def add_gate(self, gate: CooperativeGate) -> None:
-        self.cooperative_gates[gate.gate_id] = gate
+        self.environment.cooperative_gates[gate.id] = gate
 
     def get_gate(self, gate_id: str) -> CooperativeGate | None:
-        return self.cooperative_gates.get(gate_id)
+        return self.environment.cooperative_gates.get(gate_id)
+
