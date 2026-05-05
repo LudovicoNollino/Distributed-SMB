@@ -4,8 +4,8 @@ from typing import Iterable
 from distributed_smb.domain.messages import (
     BlockDestroyedEvent,
     GateStateChangedEvent,
-    PowerUpCollectedEvent,
     MessageValidationError,
+    PowerUpCollectedEvent,
     validate_player_id,
 )
 
@@ -20,18 +20,18 @@ class DestructibleBlock:
 
     def destroy(self) -> BlockDestroyedEvent:
         if self.destroyed:
-            raise MessageValidationError(f"Block at {self.position} is already destroyed")
+            raise MessageValidationError(f"Block at {self.x}, {self.y} is already destroyed")
         self.destroyed = True
-        return BlockDestroyedEvent(position=self.position)
+        return BlockDestroyedEvent(position=(self.x, self.y))
 
 
 @dataclass(slots=True)
 class ExclusivePowerUp:
     x: int
     y: int
+    powerup_id: str
     width: int = 32
     height: int = 32
-    powerup_id: str
     collected: bool = False
     owner: str | None = None
 
@@ -52,9 +52,9 @@ class ExclusivePowerUp:
 class CooperativeGate:
     x: int
     y: int
+    gate_id: str
     width: int = 32
     height: int = 32
-    gate_id: str
     state: str = "closed"
     contributions: set[str] = field(default_factory=set)
 

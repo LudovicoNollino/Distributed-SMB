@@ -37,8 +37,6 @@ from distributed_smb.domain.messages import (
     WorldStateSchema,
     WorldStateSnapshot,
 )
-
-from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.input import InputState

@@ -1,3 +1,4 @@
+from distributed_smb.domain.entity import DestructibleBlock
 from distributed_smb.domain.session import (
     GameSession,
     HostMigrationMetadata,
@@ -5,6 +6,7 @@ from distributed_smb.domain.session import (
     SessionInfo,
 )
 from distributed_smb.domain.session_state import SessionPhase, SessionState
+from distributed_smb.domain.world import EnvironmentalState
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
 
@@ -81,10 +83,6 @@ def test_game_session_initialize_rejoin():
     session.initialize_rejoin_metadata()
 
     assert session.rejoin_metadata is not None
-
-from distributed_smb.domain.session import GameSession, HostMigrationMetadata
-from distributed_smb.domain.world import EnvironmentalState
-from distributed_smb.domain.entity import DestructibleBlock
 
 
 def test_host_migration_metadata_can_preserve_environment():

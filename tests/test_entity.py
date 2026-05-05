@@ -8,8 +8,8 @@ from distributed_smb.domain.entity import (
 from distributed_smb.domain.messages import (
     BlockDestroyedEvent,
     GateStateChangedEvent,
-    PowerUpCollectedEvent,
     MessageValidationError,
+    PowerUpCollectedEvent,
 )
 
 

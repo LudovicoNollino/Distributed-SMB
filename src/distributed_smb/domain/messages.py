@@ -1,11 +1,12 @@
 """Data transfer objects exchanged between peers."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.roster import GlobalRoster
 
@@ -77,7 +78,7 @@ class WorldStateSnapshot:
     """Represents a world snapshot sent by the authoritative host."""
 
     sequence_number: int
-    world_state: WorldState = field(default_factory=WorldState)
+    world_state: "WorldState"
     message_type: MessageType = field(init=False, default=MessageType.WORLD_STATE)
 
 
@@ -163,8 +164,9 @@ class GameStart:
 
 @dataclass(slots=True)
 class InitialStateSync:
-    world_state: WorldState
+    world_state: "WorldState"
     message_type: MessageType = field(init=False, default=MessageType.INITIAL_STATE_SYNC)
+
 
 @dataclass(slots=True)
 class BlockDestroyedEvent:
@@ -221,6 +223,7 @@ class PlayerDisconnected:
 
     def __post_init__(self):
         validate_player_id(self.player_id)
+
 
 class PlayerInputSchema(BaseModel):
     """Schema for UDP PlayerInputPacket validation."""
@@ -310,8 +313,9 @@ class InitialStateSyncSchema(BaseModel):
     world_state: dict = Field(...)
     message_type: str = Field(default="initial_state_sync")
 
+
 class BlockDestroyedEventSchema(BaseModel):
-    position: list[int] = Field(..., min_items=2, max_items=2)
+    position: list[int] = Field(..., min_length=2, max_length=2)
     message_type: str = Field(default="block_destroyed_event")
 
 

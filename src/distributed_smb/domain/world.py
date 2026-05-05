@@ -2,8 +2,10 @@
 
 from dataclasses import dataclass, field
 
-from distributed_smb.shared.config import PLAYER_HEIGHT, PLAYER_WIDTH
 from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
+from distributed_smb.shared.config import PLAYER_HEIGHT, PLAYER_WIDTH
+
+
 @dataclass(slots=True)
 class CharacterState:
     """Minimal dynamic state for a controllable character."""
@@ -20,11 +22,13 @@ class CharacterState:
     prev_y: float = 0.0
     join_index: int = 0
 
+
 @dataclass(slots=True)
 class EnvironmentalState:
     destructible_blocks: list[DestructibleBlock] = field(default_factory=list)
     power_ups: dict[str, ExclusivePowerUp] = field(default_factory=dict)
     cooperative_gates: dict[str, CooperativeGate] = field(default_factory=dict)
+
 
 @dataclass(slots=True)
 class WorldState:
@@ -49,25 +53,24 @@ class WorldState:
 
     def get_all_players_dict(self):
         return self.characters
-    
+
     def add_block(self, block: DestructibleBlock) -> None:
         self.environment.destructible_blocks.append(block)
 
     def get_block(self, position: tuple[int, int]) -> DestructibleBlock | None:
         for block in self.environment.destructible_blocks:
-            if block.position == position:
+            if (block.x, block.y) == position:
                 return block
         return None
 
     def add_power_up(self, power_up: ExclusivePowerUp) -> None:
-        self.environment.power_ups[power_up.id] = power_up
+        self.environment.power_ups[power_up.powerup_id] = power_up
 
     def get_power_up(self, powerup_id: str) -> ExclusivePowerUp | None:
         return self.environment.power_ups.get(powerup_id)
 
     def add_gate(self, gate: CooperativeGate) -> None:
-        self.environment.cooperative_gates[gate.id] = gate
+        self.environment.cooperative_gates[gate.gate_id] = gate
 
     def get_gate(self, gate_id: str) -> CooperativeGate | None:
         return self.environment.cooperative_gates.get(gate_id)
-

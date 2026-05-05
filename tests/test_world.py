@@ -1,5 +1,5 @@
 from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
-from distributed_smb.domain.world import EnvironmentalState, WorldState, CharacterState
+from distributed_smb.domain.world import EnvironmentalState, WorldState
 
 
 def test_environmental_state_contains_entities():

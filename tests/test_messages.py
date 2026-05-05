@@ -4,7 +4,12 @@ from dataclasses import asdict
 import pytest
 
 from distributed_smb.domain.messages import (
+    BlockDestroyedEvent,
+    GateStateChangedEvent,
     MessageValidationError,
+    PlayerDisconnected,
+    PlayerLeft,
+    PowerUpCollectedEvent,
     RosterUpdate,
     SessionCreate,
     SessionJoin,
@@ -73,21 +78,8 @@ def test_roster_update_validates_on_message():
     roster.add_player(RosterEntry("p1", "127.0.0.1", 5000, 0))
     roster.add_player(RosterEntry("p2", "127.0.0.1", 5001, 1))
 
-    # Should not raise - valid roster
     msg = RosterUpdate(roster=roster)
     assert len(msg.roster.players) == 2
-
-import json
-from dataclasses import asdict
-
-from distributed_smb.domain.messages import (
-    BlockDestroyedEvent,
-    GateStateChangedEvent,
-    PlayerDisconnected,
-    PlayerLeft,
-    PowerUpCollectedEvent,
-    MessageValidationError,
-)
 
 
 def test_player_left_message():

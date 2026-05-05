@@ -29,6 +29,7 @@ class HostMigrationMetadata:
     migration_version: int = 0
     preserved_environment: EnvironmentalState | None = None
 
+
 @dataclass(slots=True)
 class PeerRejoinMetadata:
     """Metadata for handling peer reconnection and state recovery."""

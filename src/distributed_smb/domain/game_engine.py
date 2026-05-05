@@ -78,13 +78,13 @@ class GameEngine:
 
     def handle_block_collisions(self) -> None:
         for player in self.world_state.characters.values():
-            for block in self.world_state.destructible_blocks:
+            for block in self.world_state.environment.destructible_blocks:
                 if not block.destroyed and check_collision(player, block):
                     event = block.destroy()
                     self.events.append(event)
 
     def handle_powerup_collisions(self) -> None:
-        for power_up in self.world_state.power_ups.values():
+        for power_up in self.world_state.environment.power_ups.values():
             if power_up.collected:
                 continue
 
@@ -103,10 +103,11 @@ class GameEngine:
 
     def handle_gate_state(self) -> None:
         active_players = self.world_state.get_all_players_dict().keys()
-        for gate in self.world_state.cooperative_gates.values():
+        for gate in self.world_state.environment.cooperative_gates.values():
             event = gate.update_state(active_players)
             if event is not None:
                 self.events.append(event)
+
 
 class Platform:
     def __init__(self, x: int, y: int, width: int, height: int) -> None:
@@ -114,5 +115,3 @@ class Platform:
         self.y = y
         self.width = width
         self.height = height
-
-    
