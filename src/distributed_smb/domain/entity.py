@@ -12,7 +12,10 @@ from distributed_smb.domain.messages import (
 
 @dataclass(slots=True)
 class DestructibleBlock:
-    position: tuple[int, int]
+    x: int
+    y: int
+    width: int = 32
+    height: int = 32
     destroyed: bool = False
 
     def destroy(self) -> BlockDestroyedEvent:
@@ -24,6 +27,10 @@ class DestructibleBlock:
 
 @dataclass(slots=True)
 class ExclusivePowerUp:
+    x: int
+    y: int
+    width: int = 32
+    height: int = 32
     powerup_id: str
     collected: bool = False
     owner: str | None = None
@@ -43,6 +50,10 @@ class ExclusivePowerUp:
 
 @dataclass(slots=True)
 class CooperativeGate:
+    x: int
+    y: int
+    width: int = 32
+    height: int = 32
     gate_id: str
     state: str = "closed"
     required_players: set[str] = field(default_factory=set)
