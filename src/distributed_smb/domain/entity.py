@@ -9,7 +9,6 @@ from distributed_smb.domain.messages import (
     validate_player_id,
 )
 
-
 @dataclass(slots=True)
 class DestructibleBlock:
     x: int

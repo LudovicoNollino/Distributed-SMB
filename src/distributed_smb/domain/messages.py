@@ -1,7 +1,5 @@
 """Data transfer objects exchanged between peers."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -78,7 +76,7 @@ class WorldStateSnapshot:
     """Represents a world snapshot sent by the authoritative host."""
 
     sequence_number: int
-    world_state: "WorldState"
+    world_state: dict
     message_type: MessageType = field(init=False, default=MessageType.WORLD_STATE)
 
 
@@ -164,7 +162,7 @@ class GameStart:
 
 @dataclass(slots=True)
 class InitialStateSync:
-    world_state: "WorldState"
+    world_state: dict
     message_type: MessageType = field(init=False, default=MessageType.INITIAL_STATE_SYNC)
 
 
