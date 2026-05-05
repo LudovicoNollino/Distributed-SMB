@@ -56,12 +56,22 @@ class CooperativeGate:
     height: int = 32
     gate_id: str
     state: str = "closed"
-    required_players: set[str] = field(default_factory=set)
+    contributions: set[str] = field(default_factory=set)
+
+    def contribute(self, player_id: str) -> None:
+        validate_player_id(player_id)
+        self.contributions.add(player_id)
 
     def update_state(self, active_player_ids: Iterable[str]) -> GateStateChangedEvent | None:
         active_set = set(active_player_ids)
-        should_be_open = self.required_players and self.required_players.issubset(active_set)
-        new_state = "open" if should_be_open else "closed"
+
+        # Se non ci sono player attivi, il gate rimane chiuso
+        should_be_open = bool(active_set) and active_set.issubset(self.contributions)
+
+        if should_be_open:
+            new_state = "open"
+        else:
+            new_state = "closed"
 
         if new_state == self.state:
             return None
