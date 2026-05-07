@@ -3,9 +3,9 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from distributed_smb.domain.messages import MessageType
 from distributed_smb.network.lobby_service import app, lobby_manager
 from distributed_smb.network.serializer import Serializer
+from distributed_smb.shared.enums import MessageType
 
 client = TestClient(app)
 s = Serializer()

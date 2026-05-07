@@ -1,20 +1,19 @@
 import pytest
 
-from distributed_smb.domain.messages import (
+from distributed_smb.domain.world import CharacterState, WorldState
+from distributed_smb.network.serializer import Serializer
+from distributed_smb.shared.enums import ConnectionStatus
+from distributed_smb.shared.input import InputState
+from distributed_smb.shared.messages.gameplay import PlayerInputPacket
+from distributed_smb.shared.messages.session import (
     GameStart,
-    InitialStateSync,
-    PlayerInputPacket,
     RosterUpdate,
     SessionCreate,
     SessionCreated,
     SessionJoin,
     SessionJoined,
-    WorldStateSnapshot,
 )
-from distributed_smb.domain.world import CharacterState, WorldState
-from distributed_smb.network.serializer import Serializer
-from distributed_smb.shared.enums import ConnectionStatus
-from distributed_smb.shared.input import InputState
+from distributed_smb.shared.messages.sync import InitialStateSync, WorldStateSnapshot
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
 

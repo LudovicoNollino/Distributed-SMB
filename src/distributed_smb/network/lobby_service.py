@@ -9,7 +9,10 @@ from dataclasses import dataclass, field
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from distributed_smb.domain.messages import (
+from distributed_smb.network.serializer import Serializer
+from distributed_smb.shared.config import LOBBY_WS_PATH, LOBBY_WS_PORT
+from distributed_smb.shared.enums import ConnectionStatus
+from distributed_smb.shared.messages.session import (
     GameStart,
     MessageType,
     RosterUpdate,
@@ -18,9 +21,6 @@ from distributed_smb.domain.messages import (
     SessionJoin,
     SessionJoined,
 )
-from distributed_smb.network.serializer import Serializer
-from distributed_smb.shared.config import LOBBY_WS_PATH, LOBBY_WS_PORT
-from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
 

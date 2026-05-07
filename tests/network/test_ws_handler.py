@@ -2,7 +2,10 @@ import time
 
 import pytest
 
-from distributed_smb.domain.messages import (
+from distributed_smb.network.lobby_service import launch_lobby_server, lobby_manager
+from distributed_smb.network.ws_handler import WsHandler
+from distributed_smb.shared.config import LOBBY_STARTUP_WAIT
+from distributed_smb.shared.messages.session import (
     GameStart,
     RosterUpdate,
     SessionCreate,
@@ -10,9 +13,6 @@ from distributed_smb.domain.messages import (
     SessionJoin,
     SessionJoined,
 )
-from distributed_smb.network.lobby_service import launch_lobby_server, lobby_manager
-from distributed_smb.network.ws_handler import WsHandler
-from distributed_smb.shared.config import LOBBY_STARTUP_WAIT
 
 TEST_PORT = 59100
 

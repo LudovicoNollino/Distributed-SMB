@@ -3,17 +3,15 @@ from dataclasses import asdict
 
 import pytest
 
-from distributed_smb.domain.messages import (
+from distributed_smb.shared.messages.gameplay import (
     BlockDestroyedEvent,
     GateStateChangedEvent,
     MessageValidationError,
     PlayerDisconnected,
     PlayerLeft,
     PowerUpCollectedEvent,
-    RosterUpdate,
-    SessionCreate,
-    SessionJoin,
 )
+from distributed_smb.shared.messages.session import RosterUpdate, SessionCreate, SessionJoin
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry, RosterValidationError
 
 

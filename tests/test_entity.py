@@ -5,12 +5,7 @@ from distributed_smb.domain.entity import (
     DestructibleBlock,
     ExclusivePowerUp,
 )
-from distributed_smb.domain.messages import (
-    BlockDestroyedEvent,
-    GateStateChangedEvent,
-    MessageValidationError,
-    PowerUpCollectedEvent,
-)
+from distributed_smb.domain.events import BlockDestroyed, GateStateChanged, PowerUpCollected
 
 
 def test_destructible_block_destroy_emits_event():
@@ -19,10 +14,10 @@ def test_destructible_block_destroy_emits_event():
     event = block.destroy()
 
     assert block.destroyed is True
-    assert isinstance(event, BlockDestroyedEvent)
+    assert isinstance(event, BlockDestroyed)
     assert event.position == (100, 100)
 
-    with pytest.raises(MessageValidationError):
+    with pytest.raises(ValueError):
         block.destroy()
 
 
@@ -32,10 +27,10 @@ def test_exclusive_powerup_collects_only_once():
 
     assert power_up.collected is True
     assert power_up.owner == "player1"
-    assert isinstance(event, PowerUpCollectedEvent)
+    assert isinstance(event, PowerUpCollected)
     assert event.player_id == "player1"
 
-    with pytest.raises(MessageValidationError):
+    with pytest.raises(ValueError):
         power_up.collect("player2")
 
 
@@ -47,7 +42,7 @@ def test_cooperative_gate_opens_when_all_active_players_contributed():
 
     event = gate.update_state(["player1", "player2"])
 
-    assert isinstance(event, GateStateChangedEvent)
+    assert isinstance(event, GateStateChanged)
     assert gate.state == "open"
     assert event.new_state == "open"
 

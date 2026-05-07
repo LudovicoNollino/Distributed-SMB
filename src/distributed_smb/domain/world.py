@@ -74,7 +74,7 @@ class WorldState:
 
     def get_gate(self, gate_id: str) -> CooperativeGate | None:
         return self.environment.cooperative_gates.get(gate_id)
-    
+
     def to_dict(self) -> dict:
         """Serialize WorldState in dict for messages."""
         return asdict(self)
@@ -82,17 +82,19 @@ class WorldState:
     @classmethod
     def from_dict(cls, data: dict) -> "WorldState":
         """Deserialize a dict into a WorldState."""
-        characters = {k: CharacterState(**v) for k, v in data['characters'].items()}
-        destructible_blocks = [DestructibleBlock(**b) for b in data['environment']['destructible_blocks']]
-        power_ups = {k: ExclusivePowerUp(**v) for k, v in data['environment']['power_ups'].items()}
-        cooperative_gates = {k: CooperativeGate(**v) for k, v in data['environment']['cooperative_gates'].items()}
+        characters = {k: CharacterState(**v) for k, v in data["characters"].items()}
+        destructible_blocks = [
+            DestructibleBlock(**b) for b in data["environment"]["destructible_blocks"]
+        ]
+        power_ups = {k: ExclusivePowerUp(**v) for k, v in data["environment"]["power_ups"].items()}
+        cooperative_gates = {
+            k: CooperativeGate(**v) for k, v in data["environment"]["cooperative_gates"].items()
+        }
         environment = EnvironmentalState(
             destructible_blocks=destructible_blocks,
             power_ups=power_ups,
-            cooperative_gates=cooperative_gates
+            cooperative_gates=cooperative_gates,
         )
         return cls(
-            sequence_number=data['sequence_number'],
-            characters=characters,
-            environment=environment
+            sequence_number=data["sequence_number"], characters=characters, environment=environment
         )

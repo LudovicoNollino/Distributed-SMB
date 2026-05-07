@@ -9,16 +9,6 @@ from typing import Any
 
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
-from distributed_smb.domain.messages import (
-    GameStart,
-    PlayerInputPacket,
-    RosterUpdate,
-    SessionCreate,
-    SessionCreated,
-    SessionJoin,
-    SessionJoined,
-    WorldStateSnapshot,
-)
 from distributed_smb.network.lobby_service import launch_lobby_server
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.network.udp_handler import UdpHandler
@@ -41,6 +31,16 @@ from distributed_smb.shared.config import (
 )
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
+from distributed_smb.shared.messages.gameplay import PlayerInputPacket
+from distributed_smb.shared.messages.session import (
+    GameStart,
+    RosterUpdate,
+    SessionCreate,
+    SessionCreated,
+    SessionJoin,
+    SessionJoined,
+)
+from distributed_smb.shared.messages.sync import WorldStateSnapshot
 from distributed_smb.shared.roster import GlobalRoster
 
 LOGGER = logging.getLogger(__name__)

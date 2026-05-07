@@ -6,40 +6,43 @@ from typing import Any, Union
 
 from pydantic import ValidationError
 
-from distributed_smb.domain.messages import (
-    BlockDestroyedEvent,
-    BlockDestroyedEventSchema,
-    GameStart,
-    GameStartSchema,
-    GateStateChangedEvent,
-    GateStateChangedEventSchema,
-    InitialStateSync,
-    InitialStateSyncSchema,
-    MessageType,
-    PlayerDisconnected,
-    PlayerDisconnectedSchema,
-    PlayerInputPacket,
-    PlayerInputSchema,
-    PlayerLeft,
-    PlayerLeftSchema,
-    PowerUpCollectedEvent,
-    PowerUpCollectedEventSchema,
-    RosterUpdate,
-    RosterUpdateSchema,
-    SessionCreate,
-    SessionCreated,
-    SessionCreatedSchema,
-    SessionCreateSchema,
-    SessionJoin,
-    SessionJoined,
-    SessionJoinedSchema,
-    SessionJoinSchema,
-    WorldStateSchema,
-    WorldStateSnapshot,
-)
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.input import InputState
+from distributed_smb.shared.messages.gameplay import (
+    BlockDestroyedEvent,
+    GateStateChangedEvent,
+    PlayerDisconnected,
+    PlayerInputPacket,
+    PlayerLeft,
+    PowerUpCollectedEvent,
+)
+from distributed_smb.shared.messages.schemas import (
+    BlockDestroyedEventSchema,
+    GameStartSchema,
+    GateStateChangedEventSchema,
+    InitialStateSyncSchema,
+    PlayerDisconnectedSchema,
+    PlayerInputSchema,
+    PlayerLeftSchema,
+    PowerUpCollectedEventSchema,
+    RosterUpdateSchema,
+    SessionCreatedSchema,
+    SessionCreateSchema,
+    SessionJoinedSchema,
+    SessionJoinSchema,
+    WorldStateSchema,
+)
+from distributed_smb.shared.messages.session import (
+    GameStart,
+    MessageType,
+    RosterUpdate,
+    SessionCreate,
+    SessionCreated,
+    SessionJoin,
+    SessionJoined,
+)
+from distributed_smb.shared.messages.sync import InitialStateSync, WorldStateSnapshot
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
 # Union type for all WebSocket coordination messages

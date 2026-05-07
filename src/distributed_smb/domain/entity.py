@@ -1,13 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from distributed_smb.domain.messages import (
-    BlockDestroyedEvent,
-    GateStateChangedEvent,
-    MessageValidationError,
-    PowerUpCollectedEvent,
-    validate_player_id,
-)
+from distributed_smb.domain.events import BlockDestroyed, GateStateChanged, PowerUpCollected
+
 
 @dataclass(slots=True)
 class DestructibleBlock:
@@ -17,11 +12,11 @@ class DestructibleBlock:
     height: int = 32
     destroyed: bool = False
 
-    def destroy(self) -> BlockDestroyedEvent:
+    def destroy(self) -> BlockDestroyed:
         if self.destroyed:
-            raise MessageValidationError(f"Block at {self.x}, {self.y} is already destroyed")
+            raise ValueError(f"Block at {self.x}, {self.y} is already destroyed")
         self.destroyed = True
-        return BlockDestroyedEvent(position=(self.x, self.y))
+        return BlockDestroyed(position=(self.x, self.y))
 
 
 @dataclass(slots=True)
@@ -34,17 +29,13 @@ class ExclusivePowerUp:
     collected: bool = False
     owner: str | None = None
 
-    def collect(self, player_id: str) -> PowerUpCollectedEvent:
-        validate_player_id(player_id)
-
+    def collect(self, player_id: str) -> PowerUpCollected:
         if self.collected:
-            raise MessageValidationError(
-                f"Power-up {self.powerup_id} is already collected by {self.owner}"
-            )
+            raise ValueError(f"Power-up {self.powerup_id} is already collected by {self.owner}")
 
         self.collected = True
         self.owner = player_id
-        return PowerUpCollectedEvent(powerup_id=self.powerup_id, player_id=player_id)
+        return PowerUpCollected(powerup_id=self.powerup_id, player_id=player_id)
 
 
 @dataclass(slots=True)
@@ -58,10 +49,9 @@ class CooperativeGate:
     contributions: set[str] = field(default_factory=set)
 
     def contribute(self, player_id: str) -> None:
-        validate_player_id(player_id)
         self.contributions.add(player_id)
 
-    def update_state(self, active_player_ids: Iterable[str]) -> GateStateChangedEvent | None:
+    def update_state(self, active_player_ids: Iterable[str]) -> GateStateChanged | None:
         active_set = set(active_player_ids)
 
         # Se non ci sono player attivi, il gate rimane chiuso
@@ -76,4 +66,4 @@ class CooperativeGate:
             return None
 
         self.state = new_state
-        return GateStateChangedEvent(gate_id=self.gate_id, new_state=self.state)
+        return GateStateChanged(gate_id=self.gate_id, new_state=self.state)
