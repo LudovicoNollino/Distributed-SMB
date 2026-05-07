@@ -4,12 +4,12 @@ from dataclasses import asdict
 import pytest
 
 from distributed_smb.shared.messages.gameplay import (
-    BlockDestroyedEvent,
-    GateStateChangedEvent,
+    BlockDestroyedMessage,
+    GateStateChangedMessage,
     MessageValidationError,
     PlayerDisconnected,
     PlayerLeft,
-    PowerUpCollectedEvent,
+    PowerUpCollectedMessage,
 )
 from distributed_smb.shared.messages.session import RosterUpdate, SessionCreate, SessionJoin
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry, RosterValidationError
@@ -97,22 +97,22 @@ def test_player_disconnected_message():
     assert msg.player_id == "player2"
 
 
-def test_block_destroyed_event_message():
-    msg = BlockDestroyedEvent(position=(1, 2))
+def test_block_destroyed_message():
+    msg = BlockDestroyedMessage(position=(1, 2))
 
-    assert msg.message_type.value == "block_destroyed_event"
+    assert msg.message_type.value == "block_destroyed_message"
     assert msg.position == (1, 2)
 
 
-def test_powerup_collected_event_message():
-    msg = PowerUpCollectedEvent(powerup_id="power1", player_id="player1")
+def test_powerup_collected_message():
+    msg = PowerUpCollectedMessage(powerup_id="power1", player_id="player1")
 
-    assert msg.message_type.value == "powerup_collected_event"
+    assert msg.message_type.value == "powerup_collected_message"
     assert msg.player_id == "player1"
 
 
-def test_gate_state_changed_event_message():
-    msg = GateStateChangedEvent(gate_id="gate1", new_state="open")
+def test_gate_state_changed_message():
+    msg = GateStateChangedMessage(gate_id="gate1", new_state="open")
 
-    assert msg.message_type.value == "gate_state_changed_event"
+    assert msg.message_type.value == "gate_state_changed_message"
     assert msg.new_state == "open"

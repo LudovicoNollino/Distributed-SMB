@@ -10,22 +10,22 @@ from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.gameplay import (
-    BlockDestroyedEvent,
-    GateStateChangedEvent,
+    BlockDestroyedMessage,
+    GateStateChangedMessage,
     PlayerDisconnected,
     PlayerInputPacket,
     PlayerLeft,
-    PowerUpCollectedEvent,
+    PowerUpCollectedMessage,
 )
 from distributed_smb.shared.messages.schemas import (
-    BlockDestroyedEventSchema,
+    BlockDestroyedMessageSchema,
     GameStartSchema,
-    GateStateChangedEventSchema,
+    GateStateChangedMessageSchema,
     InitialStateSyncSchema,
     PlayerDisconnectedSchema,
     PlayerInputSchema,
     PlayerLeftSchema,
-    PowerUpCollectedEventSchema,
+    PowerUpCollectedMessageSchema,
     RosterUpdateSchema,
     SessionCreatedSchema,
     SessionCreateSchema,
@@ -54,9 +54,9 @@ WsMessage = Union[
     RosterUpdate,
     GameStart,
     InitialStateSync,
-    BlockDestroyedEvent,
-    PowerUpCollectedEvent,
-    GateStateChangedEvent,
+    BlockDestroyedMessage,
+    PowerUpCollectedMessage,
+    GateStateChangedMessage,
     PlayerLeft,
     PlayerDisconnected,
 ]
@@ -202,20 +202,20 @@ class Serializer:
                 )
                 return InitialStateSync(world_state=world_state)
 
-            if message_type == MessageType.BLOCK_DESTROYED_EVENT:
-                validated = BlockDestroyedEventSchema(**data)
-                return BlockDestroyedEvent(position=tuple(validated.position))
+            if message_type == MessageType.BLOCK_DESTROYED_MESSAGE:
+                validated = BlockDestroyedMessageSchema(**data)
+                return BlockDestroyedMessage(position=tuple(validated.position))
 
-            if message_type == MessageType.POWERUP_COLLECTED_EVENT:
-                validated = PowerUpCollectedEventSchema(**data)
-                return PowerUpCollectedEvent(
+            if message_type == MessageType.POWERUP_COLLECTED_MESSAGE:
+                validated = PowerUpCollectedMessageSchema(**data)
+                return PowerUpCollectedMessage(
                     powerup_id=validated.powerup_id,
                     player_id=validated.player_id,
                 )
 
-            if message_type == MessageType.GATE_STATE_CHANGED_EVENT:
-                validated = GateStateChangedEventSchema(**data)
-                return GateStateChangedEvent(
+            if message_type == MessageType.GATE_STATE_CHANGED_MESSAGE:
+                validated = GateStateChangedMessageSchema(**data)
+                return GateStateChangedMessage(
                     gate_id=validated.gate_id,
                     new_state=validated.new_state,
                 )

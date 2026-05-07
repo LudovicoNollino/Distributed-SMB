@@ -53,8 +53,8 @@ class MessageType(StrEnum):
     SESSION_JOINED = "session_joined"
     ROSTER_UPDATE = "roster_update"
 
-    BLOCK_DESTROYED_EVENT = "block_destroyed_event"
-    POWERUP_COLLECTED_EVENT = "powerup_collected_event"
-    GATE_STATE_CHANGED_EVENT = "gate_state_changed_event"
+    BLOCK_DESTROYED_MESSAGE = "block_destroyed_message"
+    POWERUP_COLLECTED_MESSAGE = "powerup_collected_message"
+    GATE_STATE_CHANGED_MESSAGE = "gate_state_changed_message"
     PLAYER_LEFT = "player_left"
     PLAYER_DISCONNECTED = "player_disconnected"

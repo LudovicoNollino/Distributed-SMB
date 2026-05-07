@@ -1,7 +1,11 @@
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from distributed_smb.domain.events import BlockDestroyed, GateStateChanged, PowerUpCollected
+from distributed_smb.domain.events import (
+    BlockDestroyedEvent,
+    GateStateChangedEvent,
+    PowerUpCollectedEvent,
+)
 
 
 @dataclass(slots=True)
@@ -12,11 +16,11 @@ class DestructibleBlock:
     height: int = 32
     destroyed: bool = False
 
-    def destroy(self) -> BlockDestroyed:
+    def destroy(self) -> BlockDestroyedEvent:
         if self.destroyed:
             raise ValueError(f"Block at {self.x}, {self.y} is already destroyed")
         self.destroyed = True
-        return BlockDestroyed(position=(self.x, self.y))
+        return BlockDestroyedEvent(position=(self.x, self.y))
 
 
 @dataclass(slots=True)
@@ -29,13 +33,13 @@ class ExclusivePowerUp:
     collected: bool = False
     owner: str | None = None
 
-    def collect(self, player_id: str) -> PowerUpCollected:
+    def collect(self, player_id: str) -> PowerUpCollectedEvent:
         if self.collected:
             raise ValueError(f"Power-up {self.powerup_id} is already collected by {self.owner}")
 
         self.collected = True
         self.owner = player_id
-        return PowerUpCollected(powerup_id=self.powerup_id, player_id=player_id)
+        return PowerUpCollectedEvent(powerup_id=self.powerup_id, player_id=player_id)
 
 
 @dataclass(slots=True)
@@ -51,7 +55,7 @@ class CooperativeGate:
     def contribute(self, player_id: str) -> None:
         self.contributions.add(player_id)
 
-    def update_state(self, active_player_ids: Iterable[str]) -> GateStateChanged | None:
+    def update_state(self, active_player_ids: Iterable[str]) -> GateStateChangedEvent | None:
         active_set = set(active_player_ids)
 
         # Se non ci sono player attivi, il gate rimane chiuso
@@ -66,4 +70,4 @@ class CooperativeGate:
             return None
 
         self.state = new_state
-        return GateStateChanged(gate_id=self.gate_id, new_state=self.state)
+        return GateStateChangedEvent(gate_id=self.gate_id, new_state=self.state)

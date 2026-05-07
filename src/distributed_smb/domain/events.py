@@ -3,17 +3,17 @@ from dataclasses import dataclass
 
 
 @dataclass(slots=True)
-class BlockDestroyed:
+class BlockDestroyedEvent:
     position: tuple[int, int]
 
 
 @dataclass(slots=True)
-class PowerUpCollected:
+class PowerUpCollectedEvent:
     powerup_id: str
     player_id: str
 
 
 @dataclass(slots=True)
-class GateStateChanged:
+class GateStateChangedEvent:
     gate_id: str
     new_state: str

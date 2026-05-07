@@ -90,21 +90,21 @@ class InitialStateSyncSchema(BaseModel):
     message_type: str = Field(default="initial_state_sync")
 
 
-class BlockDestroyedEventSchema(BaseModel):
+class BlockDestroyedMessageSchema(BaseModel):
     position: list[int] = Field(..., min_length=2, max_length=2)
-    message_type: str = Field(default="block_destroyed_event")
+    message_type: str = Field(default="block_destroyed_message")
 
 
-class PowerUpCollectedEventSchema(BaseModel):
+class PowerUpCollectedMessageSchema(BaseModel):
     powerup_id: str = Field(..., min_length=1)
     player_id: str = Field(..., min_length=1)
-    message_type: str = Field(default="powerup_collected_event")
+    message_type: str = Field(default="powerup_collected_message")
 
 
-class GateStateChangedEventSchema(BaseModel):
+class GateStateChangedMessageSchema(BaseModel):
     gate_id: str = Field(..., min_length=1)
     new_state: str = Field(..., min_length=1)
-    message_type: str = Field(default="gate_state_changed_event")
+    message_type: str = Field(default="gate_state_changed_message")
 
 
 class PlayerLeftSchema(BaseModel):

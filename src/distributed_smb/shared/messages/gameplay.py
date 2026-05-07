@@ -19,9 +19,9 @@ class PlayerInputPacket:
 
 
 @dataclass(slots=True)
-class BlockDestroyedEvent:
+class BlockDestroyedMessage:
     position: tuple[int, int]
-    message_type: MessageType = field(init=False, default=MessageType.BLOCK_DESTROYED_EVENT)
+    message_type: MessageType = field(init=False, default=MessageType.BLOCK_DESTROYED_MESSAGE)
 
     def __post_init__(self):
         if (
@@ -33,10 +33,10 @@ class BlockDestroyedEvent:
 
 
 @dataclass(slots=True)
-class PowerUpCollectedEvent:
+class PowerUpCollectedMessage:
     powerup_id: str
     player_id: str
-    message_type: MessageType = field(init=False, default=MessageType.POWERUP_COLLECTED_EVENT)
+    message_type: MessageType = field(init=False, default=MessageType.POWERUP_COLLECTED_MESSAGE)
 
     def __post_init__(self):
         if not self.powerup_id or not isinstance(self.powerup_id, str):
@@ -45,10 +45,10 @@ class PowerUpCollectedEvent:
 
 
 @dataclass(slots=True)
-class GateStateChangedEvent:
+class GateStateChangedMessage:
     gate_id: str
     new_state: str
-    message_type: MessageType = field(init=False, default=MessageType.GATE_STATE_CHANGED_EVENT)
+    message_type: MessageType = field(init=False, default=MessageType.GATE_STATE_CHANGED_MESSAGE)
 
     def __post_init__(self):
         if not self.gate_id or not isinstance(self.gate_id, str):
