@@ -15,6 +15,7 @@ class GameEngine:
 
     world_state: WorldState = field(default_factory=WorldState)
     platforms: list = field(default_factory=list)
+    events: list = field(default_factory=list)
 
     def __post_init__(self) -> None:
         s = WORLD_SCALE
@@ -51,6 +52,7 @@ class GameEngine:
             apply_physics(player, dt)
 
         self.handle_collisions()
+        self.handle_block_collisions()
         self.handle_powerup_collisions()
         self.handle_gate_state()
         self.world_state.sequence_number += 1

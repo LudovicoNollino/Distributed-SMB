@@ -15,6 +15,10 @@ LOBBY_WS_PORT = 50002
 LOBBY_WS_PATH = "/lobby"
 LOBBY_WS_URL_TEMPLATE = "ws://{host}:{port}{path}"
 
+# Game event WebSocket server (host → clients, reliable in-game events)
+GAME_EVENT_WS_PORT = 50003
+GAME_EVENT_WS_PATH = "/game-events"
+
 # Lobby coordination timings
 LOBBY_STARTUP_WAIT = 0.5  # seconds to wait for uvicorn to bind before connecting
 LOBBY_TIMEOUT = 30.0  # seconds a client waits for GAME_START before giving up
