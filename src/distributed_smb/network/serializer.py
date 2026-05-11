@@ -75,7 +75,7 @@ class Serializer:
         """Encode the given payload to JSON."""
         if is_dataclass(payload):
             payload = asdict(payload)
-        return json.dumps(payload)
+        return json.dumps(payload, default=lambda o: list(o) if isinstance(o, set) else o)
 
     def decode(self, payload: str | bytes) -> Any:
         """Decode JSON data into a Python object."""

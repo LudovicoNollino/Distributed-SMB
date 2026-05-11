@@ -77,7 +77,10 @@ class WorldState:
 
     def to_dict(self) -> dict:
         """Serialize WorldState in dict for messages."""
-        return asdict(self)
+        d = asdict(self)
+        for gate in d["environment"]["cooperative_gates"].values():
+            gate["contributions"] = list(gate["contributions"])
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "WorldState":
@@ -88,7 +91,8 @@ class WorldState:
         ]
         power_ups = {k: ExclusivePowerUp(**v) for k, v in data["environment"]["power_ups"].items()}
         cooperative_gates = {
-            k: CooperativeGate(**v) for k, v in data["environment"]["cooperative_gates"].items()
+            k: CooperativeGate(**{**v, "contributions": set(v["contributions"])})
+            for k, v in data["environment"]["cooperative_gates"].items()
         }
         environment = EnvironmentalState(
             destructible_blocks=destructible_blocks,

@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
 from distributed_smb.network.game_event_server import (
@@ -45,6 +46,7 @@ from distributed_smb.shared.messages.gameplay import (
     BlockDestroyedMessage,
     GateStateChangedMessage,
     PlayerInputPacket,
+    PlayerLeft,
     PowerUpCollectedMessage,
 )
 from distributed_smb.shared.messages.session import (
@@ -333,6 +335,12 @@ class NodeController:
         if self.engine.world_state.get_player(self.remote_player_id) is None:
             x, y = self._spawn_position_for(self.remote_player_id)
             self.engine.spawn_player(self.remote_player_id, x=x, y=y)
+        # TEST TEMPORANEO — rimuovere dopo verifica eventi
+        self.engine.world_state.add_block(DestructibleBlock(x=200, y=200))
+        self.engine.world_state.add_power_up(
+            ExclusivePowerUp(x=300, y=200, powerup_id="pu-test")
+        )
+        self.engine.world_state.add_gate(CooperativeGate(x=400, y=200, gate_id="gate-test"))
 
     def _spawn_position_for(self, player_id: str) -> tuple[int, int]:
         """Return a stable spawn point for each player across every process."""
@@ -463,9 +471,17 @@ class NodeController:
     def _evict_player(self, pid: str) -> None:
         """Remove a player from the local world and clean up associated state."""
         self.engine.world_state.remove_player(pid)
+        self.roster.remove_player(pid)
         self.cached_remote_inputs.pop(pid, None)
         self.last_remote_input_sequence.pop(pid, None)
         self.last_input_time.pop(pid, None)
+
+    def _send_player_left(self, pid: str) -> None:
+        """Broadcast a PlayerLeft message to all remaining clients."""
+        msg = PlayerLeft(player_id=pid)
+        payload = json.dumps(self.serializer.encode_ws_message(msg)).encode()
+        send_game_event(payload)
+        LOGGER.info("PlayerLeft broadcast: %s", pid)
 
     def _check_player_disconnections(self) -> None:
         """Detect players that dropped their connection (WebSocket or UDP) and evict them."""
@@ -475,12 +491,14 @@ class NodeController:
                 break
             LOGGER.info("Player left the game (WebSocket): %s", pid)
             self._evict_player(pid)
+            self._send_player_left(pid)
 
         now = time.time()
         for pid in list(self.last_input_time):
             if now - self.last_input_time[pid] > UDP_INPUT_TIMEOUT:
                 LOGGER.info("Player left the game (UDP timeout): %s", pid)
                 self._evict_player(pid)
+                self._send_player_left(pid)
 
     def _drain_game_events(self) -> None:
         """Poll incoming game events and apply them to the local world state."""
@@ -505,6 +523,9 @@ class NodeController:
                 if gate:
                     gate.state = msg.new_state
                     LOGGER.info("game event applied: %s", msg)
+            elif isinstance(msg, PlayerLeft):
+                LOGGER.info("Player left (received): %s", msg.player_id)
+                self._evict_player(msg.player_id)
 
     def process_frame(self, dt: float, local_input: InputState) -> object:
         """Advance one frame according to the current runtime role."""

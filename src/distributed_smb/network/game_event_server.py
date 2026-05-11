@@ -6,7 +6,7 @@ import queue
 import threading
 
 import uvicorn
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 
 from distributed_smb.shared.config import (
     GAME_EVENT_HEARTBEAT_INTERVAL,
@@ -69,6 +69,14 @@ async def _broadcast(payload: bytes) -> None:
         event = _ws_to_event.get(id(ws))
         if event is not None:
             event.set()
+
+
+@app.post("/test-event")
+async def test_event(request: Request) -> dict:
+    """TEST ONLY — broadcast a raw JSON payload to all connected clients."""
+    body = await request.body()
+    await _broadcast(body)
+    return {"connections": len(_connections)}
 
 
 async def _heartbeat_loop() -> None:
