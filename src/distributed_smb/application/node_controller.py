@@ -11,6 +11,7 @@ from typing import Any
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
 from distributed_smb.network.game_event_server import (
+    get_disconnected_player,
     launch_game_event_server,
     send_game_event,
 )
@@ -35,6 +36,7 @@ from distributed_smb.shared.config import (
     LOBBY_WS_PORT,
     MIN_PLAYERS_TO_START,
     TICK_INTERVAL,
+    UDP_INPUT_TIMEOUT,
 )
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
@@ -102,6 +104,7 @@ class NodeController:
     received_input_packets: int = 0
     sent_snapshots: int = 0
     received_snapshots: int = 0
+    last_input_time: dict[str, float] = field(default_factory=dict)
 
     def bootstrap(
         self,
@@ -280,7 +283,13 @@ class NodeController:
         self.engine.world_state.characters.clear()
         for entry in self.roster.get_all_players():
             x, y = self._spawn_position_for(entry.player_id)
-            self.engine.spawn_player(entry.player_id, x=x, y=y)
+            self.engine.spawn_player(entry.player_id, x=x, y=y, join_index=entry.join_index)
+        now = time.time()
+        self.last_input_time = {
+            entry.player_id: now
+            for entry in self.roster.get_all_players()
+            if entry.player_id != self.local_player_id
+        }
         others = [e for e in self.roster.get_all_players() if e.player_id != self.local_player_id]
         if others:
             remote = others[0]
@@ -388,6 +397,7 @@ class NodeController:
 
             self.last_remote_input_sequence[decoded.player_id] = decoded.sequence_number
             self.cached_remote_inputs[decoded.player_id] = decoded.input_state
+            self.last_input_time[decoded.player_id] = time.time()
             self.received_input_packets += 1
 
     def _drain_snapshot_packets(self) -> None:
@@ -450,6 +460,28 @@ class NodeController:
         send_game_event(payload)
         LOGGER.info("game event sent: %s", msg)
 
+    def _evict_player(self, pid: str) -> None:
+        """Remove a player from the local world and clean up associated state."""
+        self.engine.world_state.remove_player(pid)
+        self.cached_remote_inputs.pop(pid, None)
+        self.last_remote_input_sequence.pop(pid, None)
+        self.last_input_time.pop(pid, None)
+
+    def _check_player_disconnections(self) -> None:
+        """Detect players that dropped their connection (WebSocket or UDP) and evict them."""
+        while True:
+            pid = get_disconnected_player()
+            if pid is None:
+                break
+            LOGGER.info("Player left the game (WebSocket): %s", pid)
+            self._evict_player(pid)
+
+        now = time.time()
+        for pid in list(self.last_input_time):
+            if now - self.last_input_time[pid] > UDP_INPUT_TIMEOUT:
+                LOGGER.info("Player left the game (UDP timeout): %s", pid)
+                self._evict_player(pid)
+
     def _drain_game_events(self) -> None:
         """Poll incoming game events and apply them to the local world state."""
         while True:
@@ -463,7 +495,7 @@ class NodeController:
                     LOGGER.info("game event applied: %s", msg)
             elif isinstance(msg, PowerUpCollectedMessage):
                 pu = self.engine.world_state.get_power_up(msg.powerup_id)
-                if pu and not pu.collected:
+                if pu:
                     pu.collected = True
                     pu.owner = msg.player_id
                     LOGGER.info("game event applied: %s", msg)
@@ -479,6 +511,7 @@ class NodeController:
         self.udp_handler.open_socket()
 
         if self.role is PlayerRole.HOST:
+            self._check_player_disconnections()
             self._drain_remote_input_packets()
             authoritative_inputs = self._build_host_inputs(local_input)
             self.engine.tick(dt, authoritative_inputs)
@@ -490,6 +523,7 @@ class NodeController:
 
         self._send_input_packet(local_input)
         self.engine.tick(dt, {self.local_player_id: local_input})
+        self.engine.events.clear()
         self._drain_snapshot_packets()
         self._drain_game_events()
         return self.engine.world_state

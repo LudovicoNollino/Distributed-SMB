@@ -19,6 +19,10 @@ LOBBY_WS_URL_TEMPLATE = "ws://{host}:{port}{path}"
 GAME_EVENT_WS_PORT = 50003
 GAME_EVENT_WS_PATH = "/game-events"
 
+# Player disconnect detection
+UDP_INPUT_TIMEOUT = 5.0  # seconds without UDP input before a peer is considered gone
+GAME_EVENT_HEARTBEAT_INTERVAL = 5.0  # seconds between WebSocket heartbeat pings
+
 # Lobby coordination timings
 LOBBY_STARTUP_WAIT = 0.5  # seconds to wait for uvicorn to bind before connecting
 LOBBY_TIMEOUT = 30.0  # seconds a client waits for GAME_START before giving up
