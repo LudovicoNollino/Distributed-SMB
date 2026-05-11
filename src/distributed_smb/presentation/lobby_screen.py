@@ -1,5 +1,7 @@
 """Pygame lobby screen shown before the gameplay loop starts."""
 
+import subprocess
+import time
 from dataclasses import dataclass, field
 
 import pygame
@@ -27,6 +29,7 @@ class LobbyScreen:
     _body_font: pygame.font.Font = field(init=False, repr=False)
     _small_font: pygame.font.Font = field(init=False, repr=False)
     is_closed: bool = field(init=False, default=False)
+    _copy_flash_until: float = field(init=False, default=0.0)
 
     def __post_init__(self) -> None:
         pygame.init()
@@ -35,6 +38,7 @@ class LobbyScreen:
         self._title_font = pygame.font.Font(None, 48)
         self._body_font = pygame.font.Font(None, 30)
         self._small_font = pygame.font.Font(None, 24)
+        pygame.scrap.init()
 
     def prompt_join_details(
         self,
@@ -115,10 +119,26 @@ class LobbyScreen:
         if self.is_closed:
             return False
 
+        btn_w, btn_h = 90, 36
+        btn_x = self.width - 52 - 16 - btn_w
+        btn_y = 238
+        copy_btn = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+        hovered = bool(session_id) and copy_btn.collidepoint(pygame.mouse.get_pos())
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.is_closed = True
                 return False
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if copy_btn.collidepoint(event.pos) and session_id:
+                    self._copy_to_clipboard(session_id)
+                    self._copy_flash_until = time.time() + 2.0
+
+        try:
+            cursor = pygame.SYSTEM_CURSOR_HAND if hovered else pygame.SYSTEM_CURSOR_ARROW
+            pygame.mouse.set_cursor(cursor)
+        except Exception:
+            pass
 
         self._screen.fill(self.background_color)
         self._draw_text("Distributed SMB Lobby", self._title_font, self.text_color, 48, 44)
@@ -129,6 +149,12 @@ class LobbyScreen:
         self._draw_panel(52, 200, self.width - 104, 112)
         self._draw_text("Session ID", self._small_font, self.muted_text_color, 78, 222)
         self._draw_text(session_label, self._body_font, self.text_color, 78, 256)
+        if session_id:
+            btn_color = (85, 175, 125) if hovered else (60, 140, 100)
+            pygame.draw.rect(self._screen, btn_color, copy_btn, border_radius=6)
+            self._draw_text("Copy", self._small_font, self.text_color, btn_x + 24, btn_y + 10)
+        if time.time() < self._copy_flash_until:
+            self._draw_text("Session ID copiato!", self._small_font, self.accent_color, 78, 322)
 
         self._draw_panel(52, 344, self.width - 104, 270)
         self._draw_text("Roster", self._body_font, self.text_color, 78, 370)
@@ -297,6 +323,37 @@ class LobbyScreen:
             line = word
         if line:
             self._draw_text(line, font, color, x, current_y)
+
+    def _copy_to_clipboard(self, text: str) -> None:
+        """Write text to the system clipboard (Linux/X11 and Windows)."""
+        import sys
+        encoded = text.encode("utf-8")
+        if sys.platform == "win32":
+            try:
+                proc = subprocess.Popen(
+                    ["clip"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                proc.stdin.write(encoded)
+                proc.stdin.close()
+                proc.wait()
+            except FileNotFoundError:
+                pass
+        else:
+            try:
+                proc = subprocess.Popen(
+                    ["xclip", "-selection", "clipboard"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                proc.stdin.write(encoded)
+                proc.stdin.close()
+                # xclip holds the clipboard in background — do not call proc.wait()
+            except FileNotFoundError:
+                pass
 
     def _get_clipboard_text(self) -> str:
         try:

@@ -44,7 +44,7 @@ class LobbyManager:
 
     def create_session(self, player_id: str, host: str, udp_port: int) -> tuple[str, int]:
         """Register the host as the first participant. Returns (session_id, join_index=0)."""
-        session_id = str(uuid.uuid4())
+        session_id = uuid.uuid4().hex[:8]
         entry = {
             "player_id": player_id,
             "host": host,
