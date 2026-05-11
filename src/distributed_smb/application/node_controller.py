@@ -1,6 +1,7 @@
 """Orchestrates presentation, domain, and network components."""
 
 import importlib
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -9,6 +10,10 @@ from typing import Any
 
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
+from distributed_smb.network.game_event_server import (
+    launch_game_event_server,
+    send_game_event,
+)
 from distributed_smb.network.lobby_service import launch_lobby_server
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.network.udp_handler import UdpHandler
@@ -21,6 +26,8 @@ from distributed_smb.shared.config import (
     DEFAULT_HOST,
     DEFAULT_PACKET_DROP_RATE,
     DEFAULT_UDP_PORT,
+    GAME_EVENT_WS_PATH,
+    GAME_EVENT_WS_PORT,
     HOST_PLAYER_ID,
     HOST_UDP_PORT,
     LOBBY_STARTUP_WAIT,
@@ -31,7 +38,13 @@ from distributed_smb.shared.config import (
 )
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
-from distributed_smb.shared.messages.gameplay import PlayerInputPacket
+from distributed_smb.shared.mappers.gameplay_mapper import event_to_message
+from distributed_smb.shared.messages.gameplay import (
+    BlockDestroyedMessage,
+    GateStateChangedMessage,
+    PlayerInputPacket,
+    PowerUpCollectedMessage,
+)
 from distributed_smb.shared.messages.session import (
     GameStart,
     RosterUpdate,
@@ -65,6 +78,11 @@ class NodeController:
     )
     ws_handler: WsHandler = field(
         default_factory=lambda: WsHandler(host=DEFAULT_HOST, port=LOBBY_WS_PORT)
+    )
+    game_event_handler: WsHandler = field(
+        default_factory=lambda: WsHandler(
+            host=DEFAULT_HOST, port=GAME_EVENT_WS_PORT, path=GAME_EVENT_WS_PATH
+        )
     )
     session_id: str = ""
     local_ip: str = DEFAULT_HOST
@@ -196,6 +214,8 @@ class NodeController:
                 self._notify_lobby_update("Waiting for players", on_update)
             time.sleep(0.05)
 
+        launch_game_event_server()
+        time.sleep(LOBBY_STARTUP_WAIT)
         self._notify_lobby_update("Broadcasting game start", on_update)
         self.ws_handler.send(GameStart(session_id=self.session_id))
         self._poll_lobby(GameStart)
@@ -267,6 +287,11 @@ class NodeController:
             self.remote_player_id = remote.player_id
             self.remote_host = remote.host
             self.remote_port = remote.udp_port
+            if self.role is PlayerRole.CLIENT:
+                path = f"{GAME_EVENT_WS_PATH}?player_id={self.local_player_id}"
+                self.game_event_handler = WsHandler(
+                    host=remote.host, port=GAME_EVENT_WS_PORT, path=path
+                )
 
     def _configure_role(self, *, packet_drop_rate: float) -> None:
         """Configure ports and player identities for host or client mode."""
@@ -379,7 +404,8 @@ class NodeController:
                 continue
 
             self.last_snapshot_sequence = decoded.sequence_number
-            self.engine.world_state = decoded.world_state
+            self.engine.world_state.characters = decoded.world_state.characters
+            self.engine.world_state.sequence_number = decoded.world_state.sequence_number
             self.received_snapshots += 1
 
     def _build_host_inputs(self, local_input: InputState) -> dict[str, InputState]:
@@ -414,6 +440,40 @@ class NodeController:
         self.udp_handler.send_packet_nowait(payload, self.remote_host, self.remote_port)
         self.sent_input_packets += 1
 
+    def _send_game_event(self, event: object) -> None:
+        """Convert a domain event to a network message and broadcast to all clients."""
+        msg = event_to_message(event)
+        if msg is None:
+            LOGGER.warning("No message mapping for event: %s", type(event).__name__)
+            return
+        payload = json.dumps(self.serializer.encode_ws_message(msg)).encode()
+        send_game_event(payload)
+        LOGGER.info("game event sent: %s", msg)
+
+    def _drain_game_events(self) -> None:
+        """Poll incoming game events and apply them to the local world state."""
+        while True:
+            msg = self.game_event_handler.poll()
+            if msg is None:
+                return
+            if isinstance(msg, BlockDestroyedMessage):
+                block = self.engine.world_state.get_block(msg.position)
+                if block and not block.destroyed:
+                    block.destroyed = True
+                    LOGGER.info("game event applied: %s", msg)
+            elif isinstance(msg, PowerUpCollectedMessage):
+                pu = self.engine.world_state.get_power_up(msg.powerup_id)
+                if pu and not pu.collected:
+                    pu.collected = True
+                    pu.owner = msg.player_id
+                    LOGGER.info("game event applied: %s", msg)
+            elif isinstance(msg, GateStateChangedMessage):
+                LOGGER.info("game event received: %s", msg)
+                gate = self.engine.world_state.get_gate(msg.gate_id)
+                if gate:
+                    gate.state = msg.new_state
+                    LOGGER.info("game event applied: %s", msg)
+
     def process_frame(self, dt: float, local_input: InputState) -> object:
         """Advance one frame according to the current runtime role."""
         self.udp_handler.open_socket()
@@ -422,10 +482,14 @@ class NodeController:
             self._drain_remote_input_packets()
             authoritative_inputs = self._build_host_inputs(local_input)
             self.engine.tick(dt, authoritative_inputs)
+            for event in self.engine.events:
+                self._send_game_event(event)
+            self.engine.events.clear()
             self._send_world_state_snapshot()
             return self.engine.world_state
 
         self._send_input_packet(local_input)
         self.engine.tick(dt, {self.local_player_id: local_input})
         self._drain_snapshot_packets()
+        self._drain_game_events()
         return self.engine.world_state

@@ -1,7 +1,7 @@
 """Game event WebSocket server — reliable in-game event delivery from host to clients."""
 
 import asyncio
-import json
+import logging
 import queue
 import threading
 
@@ -9,6 +9,8 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from distributed_smb.shared.config import GAME_EVENT_WS_PATH, GAME_EVENT_WS_PORT
+
+LOGGER = logging.getLogger(__name__)
 
 _connections: list[WebSocket] = []
 _ws_to_player: dict[int, str] = {}  # id(ws) → player_id
@@ -19,31 +21,29 @@ app = FastAPI(title="Distributed SMB Game Events")
 
 
 @app.websocket(GAME_EVENT_WS_PATH)
-async def game_event_endpoint(ws: WebSocket) -> None:
+async def game_event_endpoint(ws: WebSocket, player_id: str = "") -> None:
     await ws.accept()
-    player_id: str | None = None
     _connections.append(ws)
+    LOGGER.info("Client connected to game event server: player_id=%r total=%d", player_id or "anonymous", len(_connections))
+    if player_id:
+        _ws_to_player[id(ws)] = player_id
     try:
-        raw = await ws.receive_text()
-        data = json.loads(raw)
-        player_id = data.get("player_id")
-        if player_id:
-            _ws_to_player[id(ws)] = player_id
-
-        async for _ in ws.iter_text():
-            pass
-    except WebSocketDisconnect:
+        while True:
+            await asyncio.sleep(60)
+    except Exception:
         pass
     finally:
         if ws in _connections:
             _connections.remove(ws)
         pid = _ws_to_player.pop(id(ws), None)
+        LOGGER.info("Client disconnected from game event server: player_id=%r total=%d", pid or "anonymous", len(_connections))
         if pid:
             _disconnect_queue.put(pid)
 
 
 async def _broadcast(payload: bytes) -> None:
     text = payload.decode("utf-8")
+    LOGGER.info("Broadcasting game event to %d connection(s): %s", len(_connections), text)
     for ws in list(_connections):
         try:
             await ws.send_text(text)
@@ -90,4 +90,5 @@ def launch_game_event_server(
 
     thread = threading.Thread(target=_run, name="game-event-server", daemon=True)
     thread.start()
+    LOGGER.info("Game event server started on port %d", port)
     return thread

@@ -114,6 +114,8 @@ def main(
 
         try:
             controller.lobby_phase(session_id=session_id, on_update=update_lobby_screen)
+            if role is PlayerRole.CLIENT:
+                controller.game_event_handler.connect()
         except LobbyCancelledError:
             logging.info("Lobby closed before game start")
             controller.ws_handler.close()

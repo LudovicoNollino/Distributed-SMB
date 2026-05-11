@@ -27,6 +27,7 @@ class WsHandler:
 
     host: str
     port: int
+    path: str = LOBBY_WS_PATH
     inbox: queue.Queue = field(default_factory=queue.Queue)
     _loop: Any = field(default=None, init=False, repr=False)
     _ws: Any = field(default=None, init=False, repr=False)
@@ -34,7 +35,7 @@ class WsHandler:
     _connection_error: Exception | None = field(default=None, init=False, repr=False)
 
     def _url(self) -> str:
-        return LOBBY_WS_URL_TEMPLATE.format(host=self.host, port=self.port, path=LOBBY_WS_PATH)
+        return LOBBY_WS_URL_TEMPLATE.format(host=self.host, port=self.port, path=self.path)
 
     def connect(self, timeout: float = 10.0) -> None:
         """Open the connection in a background daemon thread.
