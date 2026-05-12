@@ -327,6 +327,7 @@ class LobbyScreen:
     def _copy_to_clipboard(self, text: str) -> None:
         """Write text to the system clipboard (Linux/X11 and Windows)."""
         import sys
+
         encoded = text.encode("utf-8")
         if sys.platform == "win32":
             try:

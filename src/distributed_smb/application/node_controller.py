@@ -337,9 +337,7 @@ class NodeController:
             self.engine.spawn_player(self.remote_player_id, x=x, y=y)
         # TEST TEMPORANEO — rimuovere dopo verifica eventi
         self.engine.world_state.add_block(DestructibleBlock(x=200, y=200))
-        self.engine.world_state.add_power_up(
-            ExclusivePowerUp(x=300, y=200, powerup_id="pu-test")
-        )
+        self.engine.world_state.add_power_up(ExclusivePowerUp(x=300, y=200, powerup_id="pu-test"))
         self.engine.world_state.add_gate(CooperativeGate(x=400, y=200, gate_id="gate-test"))
 
     def _spawn_position_for(self, player_id: str) -> tuple[int, int]:
