@@ -116,6 +116,14 @@ def main(
             controller.lobby_phase(session_id=session_id, on_update=update_lobby_screen)
             if role is PlayerRole.CLIENT:
                 controller.game_event_handler.connect()
+            if not lobby_screen.play_game_start_transition(
+                role=role,
+                roster=controller.roster,
+            ):
+                logging.info("Gameplay start cancelled during transition")
+                controller.ws_handler.close()
+                controller.udp_handler.close_socket()
+                return controller
         except LobbyCancelledError:
             logging.info("Lobby closed before game start")
             controller.ws_handler.close()

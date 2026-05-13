@@ -38,7 +38,7 @@ class LobbyScreen:
         self._title_font = pygame.font.Font(None, 48)
         self._body_font = pygame.font.Font(None, 30)
         self._small_font = pygame.font.Font(None, 24)
-        pygame.scrap.init()
+        self._init_clipboard()
 
     def prompt_join_details(
         self,
@@ -49,7 +49,7 @@ class LobbyScreen:
         """Collect host IP and session ID from the client before joining."""
         pygame.display.set_caption("Distributed SMB - Join Session")
         pygame.key.start_text_input()
-        pygame.scrap.init()
+        self._init_clipboard()
         clock = pygame.time.Clock()
         host_ip = initial_host_ip
         session_id = initial_session_id
@@ -212,6 +212,41 @@ class LobbyScreen:
             pygame.display.flip()
             clock.tick(30)
 
+    def play_game_start_transition(
+        self,
+        *,
+        role: PlayerRole,
+        roster: GlobalRoster,
+        duration_seconds: float = 1.8,
+    ) -> bool:
+        """Animate the handoff from lobby to gameplay."""
+        if self.is_closed:
+            return False
+
+        pygame.display.set_caption("Distributed SMB - Starting Game")
+        clock = pygame.time.Clock()
+        started_at = time.monotonic()
+        player_count = len(roster.get_all_players())
+
+        while not self.is_closed:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.is_closed = True
+                    return False
+
+            elapsed = time.monotonic() - started_at
+            progress = min(1.0, elapsed / max(duration_seconds, 0.01))
+            self._render_game_start_transition(
+                progress=progress,
+                role=role,
+                player_count=player_count,
+            )
+            pygame.display.flip()
+
+            if progress >= 1.0:
+                return True
+            clock.tick(60)
+
     def close(self) -> None:
         """Close the lobby display surface before the gameplay app takes over."""
         pygame.display.quit()
@@ -267,6 +302,49 @@ class LobbyScreen:
             472,
         )
         pygame.display.flip()
+
+    def _render_game_start_transition(
+        self,
+        *,
+        progress: float,
+        role: PlayerRole,
+        player_count: int,
+    ) -> None:
+        self._screen.fill((12, 18, 26))
+        center_x = self.width // 2
+        center_y = self.height // 2
+
+        pulse = int(32 * min(progress, 1.0))
+        pygame.draw.circle(self._screen, (40, 82, 98), (center_x, center_y), 120 + pulse, width=3)
+        pygame.draw.circle(
+            self._screen,
+            (82, 174, 132),
+            (center_x, center_y),
+            max(16, int(88 * progress)),
+            width=5,
+        )
+
+        title = "GET READY" if progress < 0.72 else "GO!"
+        title_surface = self._title_font.render(title, True, self.text_color)
+        self._screen.blit(title_surface, title_surface.get_rect(center=(center_x, center_y - 68)))
+
+        plural = "s" if player_count != 1 else ""
+        detail = f"{role.value.upper()} | {player_count} player{plural}"
+        detail_surface = self._body_font.render(detail, True, self.accent_color)
+        self._screen.blit(detail_surface, detail_surface.get_rect(center=(center_x, center_y - 18)))
+
+        bar_width = min(420, self.width - 160)
+        bar = pygame.Rect(center_x - bar_width // 2, center_y + 42, bar_width, 14)
+        pygame.draw.rect(self._screen, (38, 45, 58), bar, border_radius=7)
+        fill = pygame.Rect(bar.x, bar.y, int(bar.width * progress), bar.height)
+        pygame.draw.rect(self._screen, self.accent_color, fill, border_radius=7)
+
+        fade_alpha = int(255 * max(0.0, (progress - 0.82) / 0.18))
+        if fade_alpha > 0:
+            overlay = pygame.Surface((self.width, self.height))
+            overlay.fill((0, 0, 0))
+            overlay.set_alpha(fade_alpha)
+            self._screen.blit(overlay, (0, 0))
 
     def _draw_join_field(
         self,
@@ -355,6 +433,12 @@ class LobbyScreen:
                 # xclip holds the clipboard in background — do not call proc.wait()
             except FileNotFoundError:
                 pass
+
+    def _init_clipboard(self) -> None:
+        try:
+            pygame.scrap.init()
+        except pygame.error:
+            pass
 
     def _get_clipboard_text(self) -> str:
         try:
