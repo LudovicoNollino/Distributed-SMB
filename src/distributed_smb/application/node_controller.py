@@ -8,7 +8,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
 from distributed_smb.network.game_event_server import (
@@ -335,10 +334,6 @@ class NodeController:
         if self.engine.world_state.get_player(self.remote_player_id) is None:
             x, y = self._spawn_position_for(self.remote_player_id)
             self.engine.spawn_player(self.remote_player_id, x=x, y=y)
-        # TEST TEMPORANEO — rimuovere dopo verifica eventi
-        self.engine.world_state.add_block(DestructibleBlock(x=200, y=200))
-        self.engine.world_state.add_power_up(ExclusivePowerUp(x=300, y=200, powerup_id="pu-test"))
-        self.engine.world_state.add_gate(CooperativeGate(x=400, y=200, gate_id="gate-test"))
 
     def _spawn_position_for(self, player_id: str) -> tuple[int, int]:
         """Return a stable spawn point for each player across every process."""
@@ -420,8 +415,7 @@ class NodeController:
                 continue
 
             self.last_snapshot_sequence = decoded.sequence_number
-            self.engine.world_state.characters = decoded.world_state.characters
-            self.engine.world_state.sequence_number = decoded.world_state.sequence_number
+            self.engine.world_state = decoded.world_state
             self.received_snapshots += 1
 
     def _build_host_inputs(self, local_input: InputState) -> dict[str, InputState]:

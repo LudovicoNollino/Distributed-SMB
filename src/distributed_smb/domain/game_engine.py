@@ -3,27 +3,100 @@
 from dataclasses import dataclass, field
 
 from distributed_smb.domain.collisions import check_collision, resolve_collision
+from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
 from distributed_smb.domain.physics import JUMP_FORCE, MOVE_SPEED, apply_physics
 from distributed_smb.domain.world import CharacterState, WorldState
-from distributed_smb.shared.config import WORLD_SCALE
+from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
 from distributed_smb.shared.input import InputState
+
+BLOCK_SIZE = 36
+POWERUP_SIZE = 34
+GATE_WIDTH = 54
+GATE_HEIGHT = 96
 
 
 @dataclass(slots=True)
 class GameEngine:
-    """Owns the local world simulation."""
+    """Owns the local world simulation and the default playable level."""
 
     world_state: WorldState = field(default_factory=WorldState)
     platforms: list = field(default_factory=list)
     events: list = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        s = WORLD_SCALE
+        self._build_default_level()
+
+    def _build_default_level(self) -> None:
+        """Create a compact level where all objects are visible and reachable."""
+        floor_y = WINDOW_HEIGHT - 90
         self.platforms = [
-            Platform(int(0 * s), int(300 * s), int(400 * s), int(50 * s)),
-            Platform(int(450 * s), int(250 * s), int(200 * s), int(50 * s)),
-            Platform(int(700 * s), int(350 * s), int(300 * s), int(50 * s)),
+            Platform(0, floor_y, WINDOW_WIDTH, 60),
+            Platform(165, floor_y - 100, 230, 30),
+            Platform(430, floor_y - 190, 230, 30),
+            Platform(690, floor_y - 100, 205, 30),
+            Platform(720, floor_y - 225, 165, 30),
         ]
+        self._seed_default_environment()
+
+    def _seed_default_environment(self) -> None:
+        env = self.world_state.environment
+        env.destructible_blocks.clear()
+        env.power_ups.clear()
+        env.cooperative_gates.clear()
+
+        self.world_state.add_block(
+            DestructibleBlock(x=230, y=420, width=BLOCK_SIZE, height=BLOCK_SIZE)
+        )
+        self.world_state.add_block(
+            DestructibleBlock(x=270, y=420, width=BLOCK_SIZE, height=BLOCK_SIZE)
+        )
+        self.world_state.add_block(
+            DestructibleBlock(x=510, y=330, width=BLOCK_SIZE, height=BLOCK_SIZE)
+        )
+        self.world_state.add_block(
+            DestructibleBlock(x=550, y=330, width=BLOCK_SIZE, height=BLOCK_SIZE)
+        )
+        self.world_state.add_block(
+            DestructibleBlock(x=760, y=295, width=BLOCK_SIZE, height=BLOCK_SIZE)
+        )
+
+        self.world_state.add_power_up(
+            ExclusivePowerUp(
+                x=335,
+                y=486,
+                width=POWERUP_SIZE,
+                height=POWERUP_SIZE,
+                powerup_id="pu-test",
+            )
+        )
+        self.world_state.add_power_up(
+            ExclusivePowerUp(
+                x=610,
+                y=396,
+                width=POWERUP_SIZE,
+                height=POWERUP_SIZE,
+                powerup_id="pu-mid",
+            )
+        )
+        self.world_state.add_power_up(
+            ExclusivePowerUp(
+                x=816,
+                y=361,
+                width=POWERUP_SIZE,
+                height=POWERUP_SIZE,
+                powerup_id="pu-high",
+            )
+        )
+
+        self.world_state.add_gate(
+            CooperativeGate(
+                x=820,
+                y=WINDOW_HEIGHT - 90 - GATE_HEIGHT,
+                width=GATE_WIDTH,
+                height=GATE_HEIGHT,
+                gate_id="gate-test",
+            )
+        )
 
     def apply_inputs(self, inputs: dict[str, InputState]) -> None:
         for player_id, input_state in inputs.items():
@@ -54,12 +127,8 @@ class GameEngine:
         self.handle_collisions()
         self.handle_block_collisions()
         self.handle_powerup_collisions()
-        self.handle_gate_state()
+        self.handle_gate_collisions()
         self.world_state.sequence_number += 1
-
-    from distributed_smb.domain.collisions import check_collision, resolve_collision
-
-    # ...
 
     def handle_collisions(self) -> None:
         for player in self.world_state.characters.values():
@@ -76,14 +145,17 @@ class GameEngine:
     def handle_environment_collisions(self) -> None:
         self.handle_block_collisions()
         self.handle_powerup_collisions()
-        self.handle_gate_state()
+        self.handle_gate_collisions()
 
     def handle_block_collisions(self) -> None:
         for player in self.world_state.characters.values():
             for block in self.world_state.environment.destructible_blocks:
                 if not block.destroyed and check_collision(player, block):
-                    event = block.destroy()
-                    self.events.append(event)
+                    if self._is_head_bump(player, block):
+                        event = block.destroy()
+                        self.events.append(event)
+                    else:
+                        resolve_collision(player, block)
 
     def handle_powerup_collisions(self) -> None:
         for power_up in self.world_state.environment.power_ups.values():
@@ -103,12 +175,29 @@ class GameEngine:
             event = power_up.collect(winner.player_id)
             self.events.append(event)
 
-    def handle_gate_state(self) -> None:
+    def handle_gate_collisions(self) -> None:
         active_players = self.world_state.get_all_players_dict().keys()
         for gate in self.world_state.environment.cooperative_gates.values():
+            colliding_players = [
+                player
+                for player in self.world_state.characters.values()
+                if check_collision(player, gate)
+            ]
+            for player in colliding_players:
+                gate.contribute(player.player_id)
             event = gate.update_state(active_players)
             if event is not None:
                 self.events.append(event)
+            if gate.state == "closed":
+                for player in colliding_players:
+                    resolve_collision(player, gate)
+
+    def _is_head_bump(self, player: CharacterState, block: DestructibleBlock) -> bool:
+        return (
+            player.vy < 0
+            and player.prev_y >= block.y + block.height
+            and player.y < block.y + block.height
+        )
 
 
 class Platform:

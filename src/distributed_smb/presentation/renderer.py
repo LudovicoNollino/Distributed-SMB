@@ -20,6 +20,9 @@ class Renderer:
     _sprite_cache: dict[
         tuple[tuple[int, int, int], str, int, int, int, int], pygame.Surface
     ] = field(init=False, default_factory=dict)
+    _environment_sprite_cache: dict[tuple[str, str, int, int], pygame.Surface] = field(
+        init=False, default_factory=dict
+    )
     _facing_by_player: dict[str, int] = field(init=False, default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -119,6 +122,109 @@ class Renderer:
             sprite = pygame.transform.flip(sprite, True, False)
         return sprite
 
+    def _draw_block_surface(self, surface: pygame.Surface) -> None:
+        width, height = surface.get_size()
+        body = (177, 100, 46)
+        mortar = (118, 62, 28)
+        highlight = (224, 160, 98)
+        pygame.draw.rect(surface, body, surface.get_rect(), border_radius=max(2, width // 10))
+        pygame.draw.rect(surface, mortar, surface.get_rect(), width=max(2, width // 9))
+        pygame.draw.line(surface, mortar, (width // 2, 3), (width // 2, height - 3), max(2, width // 12))
+        pygame.draw.line(surface, mortar, (3, height // 2), (width - 3, height // 2), max(2, height // 12))
+        pygame.draw.line(surface, highlight, (5, 5), (width - 5, 5), max(1, height // 14))
+
+    def _draw_powerup_surface(self, surface: pygame.Surface) -> None:
+        width, height = surface.get_size()
+        glow_color = (255, 227, 107, 90)
+        star_color = (255, 217, 52)
+        shine = (255, 247, 205)
+        center = (width // 2, height // 2)
+        radius = max(6, min(width, height) // 2 - 3)
+        pygame.draw.circle(surface, glow_color, center, radius)
+        points = [
+            (width * 0.50, height * 0.12),
+            (width * 0.60, height * 0.38),
+            (width * 0.88, height * 0.38),
+            (width * 0.66, height * 0.56),
+            (width * 0.76, height * 0.86),
+            (width * 0.50, height * 0.68),
+            (width * 0.24, height * 0.86),
+            (width * 0.34, height * 0.56),
+            (width * 0.12, height * 0.38),
+            (width * 0.40, height * 0.38),
+        ]
+        pygame.draw.polygon(surface, star_color, [(round(x), round(y)) for x, y in points])
+        pygame.draw.circle(surface, shine, (round(width * 0.43), round(height * 0.32)), max(2, width // 10))
+
+    def _draw_gate_surface(self, surface: pygame.Surface, state: str) -> None:
+        width, height = surface.get_size()
+        frame = (92, 65, 40)
+        closed_fill = (79, 127, 173)
+        open_fill = (116, 195, 122)
+        accent = (212, 233, 248) if state == "closed" else (215, 255, 220)
+        fill = open_fill if state == "open" else closed_fill
+        panel_width = max(4, width // 5)
+        pygame.draw.rect(surface, frame, surface.get_rect(), border_radius=max(2, width // 10))
+        inner = surface.get_rect().inflate(-max(4, width // 5), -max(4, height // 8))
+        pygame.draw.rect(surface, fill, inner, border_radius=max(2, width // 12))
+        pygame.draw.rect(surface, accent, inner, width=max(2, width // 12), border_radius=max(2, width // 12))
+        if state == "open":
+            opening = pygame.Rect(inner.centerx - panel_width // 2, inner.y, panel_width, inner.height)
+            pygame.draw.rect(surface, (30, 30, 30, 0), opening)
+            pygame.draw.rect(surface, (35, 45, 58), opening.inflate(-2, 0))
+        else:
+            pygame.draw.circle(
+                surface,
+                (255, 236, 135),
+                (inner.centerx, inner.centery),
+                max(3, min(width, height) // 9),
+            )
+
+    def _get_environment_sprite(
+        self,
+        sprite_kind: str,
+        state: str,
+        width: int,
+        height: int,
+    ) -> pygame.Surface:
+        cache_key = (sprite_kind, state, width, height)
+        sprite = self._environment_sprite_cache.get(cache_key)
+        if sprite is not None:
+            return sprite
+
+        sprite = pygame.Surface((width, height), pygame.SRCALPHA)
+        if sprite_kind == "block":
+            self._draw_block_surface(sprite)
+        elif sprite_kind == "powerup":
+            self._draw_powerup_surface(sprite)
+        elif sprite_kind == "gate":
+            self._draw_gate_surface(sprite, state)
+        self._environment_sprite_cache[cache_key] = sprite
+        return sprite
+
+    def _render_environment(self, screen: pygame.Surface, world_state: WorldState) -> None:
+        for block in world_state.environment.destructible_blocks:
+            if block.destroyed:
+                continue
+            screen.blit(
+                self._get_environment_sprite("block", "intact", block.width, block.height),
+                (int(block.x), int(block.y)),
+            )
+
+        for power_up in world_state.environment.power_ups.values():
+            if power_up.collected:
+                continue
+            screen.blit(
+                self._get_environment_sprite("powerup", "available", power_up.width, power_up.height),
+                (int(power_up.x), int(power_up.y)),
+            )
+
+        for gate in world_state.environment.cooperative_gates.values():
+            screen.blit(
+                self._get_environment_sprite("gate", gate.state, gate.width, gate.height),
+                (int(gate.x), int(gate.y)),
+            )
+
     def _get_player_sprite(self, character: CharacterState) -> pygame.Surface:
         """Return a cached sprite frame for the given character state."""
         color = self.player_palette.get(character.player_id, (80, 80, 80))
@@ -150,6 +256,8 @@ class Renderer:
 
         for platform in platforms:
             pygame.draw.rect(screen, self.platform_color, platform)
+
+        self._render_environment(screen, world_state)
 
         for character in sorted(world_state.characters.values(), key=lambda c: (c.y, c.player_id)):
             player_rect = pygame.Rect(

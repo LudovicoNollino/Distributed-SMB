@@ -6,7 +6,7 @@ from typing import Any, Union
 
 from pydantic import ValidationError
 
-from distributed_smb.domain.world import CharacterState, WorldState
+from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.gameplay import (
@@ -107,14 +107,7 @@ class Serializer:
 
             if message_type == MessageType.WORLD_STATE:
                 validated = WorldStateSchema(**data)
-                characters = {
-                    player_id: CharacterState(**character_data)
-                    for player_id, character_data in validated.world_state["characters"].items()
-                }
-                world_state = WorldState(
-                    sequence_number=validated.world_state["sequence_number"],
-                    characters=characters,
-                )
+                world_state = self._decode_world_state(validated.world_state)
                 return WorldStateSnapshot(
                     sequence_number=validated.sequence_number,
                     world_state=world_state,
@@ -192,14 +185,7 @@ class Serializer:
 
             if message_type == MessageType.INITIAL_STATE_SYNC:
                 validated = InitialStateSyncSchema(**data)
-                characters = {
-                    pid: CharacterState(**cs)
-                    for pid, cs in validated.world_state["characters"].items()
-                }
-                world_state = WorldState(
-                    sequence_number=validated.world_state["sequence_number"],
-                    characters=characters,
-                )
+                world_state = self._decode_world_state(validated.world_state)
                 return InitialStateSync(world_state=world_state)
 
             if message_type == MessageType.BLOCK_DESTROYED_MESSAGE:
@@ -234,3 +220,19 @@ class Serializer:
             raise DeserializationError(
                 f"Invalid WebSocket message format (type: {message_type}): {e.errors()}"
             )
+
+    def _decode_world_state(self, data: dict[str, Any]) -> WorldState:
+        """Rebuild a full world state, including environmental entities."""
+        environment = data.get("environment", {})
+        normalized_environment = {
+            "destructible_blocks": environment.get("destructible_blocks", []),
+            "power_ups": environment.get("power_ups", {}),
+            "cooperative_gates": environment.get("cooperative_gates", {}),
+        }
+        return WorldState.from_dict(
+            {
+                "sequence_number": data["sequence_number"],
+                "characters": data["characters"],
+                "environment": normalized_environment,
+            }
+        )
