@@ -1,4 +1,5 @@
 from distributed_smb.domain.game_engine import GameEngine
+from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
 from distributed_smb.shared.input import InputState
 
 
@@ -107,3 +108,131 @@ def test_multiplayer_inputs():
 
     assert p1.vx > 0
     assert p2.vx < 0
+
+
+def test_default_level_contains_reachable_world_objects():
+    engine = GameEngine()
+    env = engine.world_state.environment
+    objects = [*env.destructible_blocks, *env.power_ups.values(), *env.cooperative_gates.values()]
+
+    assert len(env.destructible_blocks) >= 5
+    assert len(engine.platforms) >= 8
+    assert len(env.power_ups) >= 10
+    assert "gate-test" in env.cooperative_gates
+    assert any(powerup_id.startswith("coin-") for powerup_id in env.power_ups)
+    assert any(powerup_id.startswith("flower-") for powerup_id in env.power_ups)
+    assert any(powerup_id.startswith("mushroom-") for powerup_id in env.power_ups)
+    assert any(powerup_id.startswith("star-") for powerup_id in env.power_ups)
+
+    for obj in objects:
+        assert 0 <= obj.x < WINDOW_WIDTH
+        assert 0 <= obj.y < WINDOW_HEIGHT
+        assert obj.x + obj.width <= WINDOW_WIDTH
+        assert obj.y + obj.height <= WINDOW_HEIGHT
+
+    for block in env.destructible_blocks:
+        assert any(
+            20 <= platform.y - (block.y + block.height) <= 150 for platform in engine.platforms
+        )
+
+    for obj in [*env.power_ups.values(), *env.cooperative_gates.values()]:
+        assert any(abs((obj.y + obj.height) - platform.y) <= 10 for platform in engine.platforms)
+
+
+def test_closed_gate_blocks_until_all_players_contribute():
+    engine = GameEngine()
+    engine.spawn_player("player1")
+    engine.spawn_player("player2")
+    gate = engine.world_state.get_gate("gate-test")
+    player1 = engine.world_state.get_player("player1")
+    player2 = engine.world_state.get_player("player2")
+
+    player1.x = gate.x - player1.width + 5
+    player1.y = gate.y + gate.height - player1.height
+    player1.prev_x = player1.x
+    player1.prev_y = player1.y
+    player1.vx = 100
+    player2.x = 100
+    player2.y = player1.y
+
+    engine.tick(1 / 60, {"player1": InputState(right=True), "player2": InputState()})
+
+    assert gate.state == "closed"
+    assert player1.x + player1.width <= gate.x
+
+
+def test_gate_opens_after_all_players_touch_it():
+    engine = GameEngine()
+    engine.spawn_player("player1")
+    engine.spawn_player("player2")
+    gate = engine.world_state.get_gate("gate-test")
+
+    for player in engine.world_state.characters.values():
+        player.x = gate.x + 4
+        player.y = gate.y + gate.height - player.height
+        player.prev_x = player.x
+        player.prev_y = player.y
+
+    engine.tick(1 / 60, {"player1": InputState(), "player2": InputState()})
+
+    assert gate.state == "open"
+    assert any(
+        event.gate_id == "gate-test" and event.new_state == "open" for event in engine.events
+    )
+
+
+def test_head_bump_destroys_destructible_block():
+    engine = GameEngine()
+    engine.spawn_player("player1")
+    player = engine.world_state.get_player("player1")
+    block = engine.world_state.environment.destructible_blocks[0]
+
+    player.x = block.x + 4
+    player.y = block.y + block.height - 2
+    player.prev_x = player.x
+    player.prev_y = block.y + block.height + 8
+    player.vy = -120
+
+    engine.handle_block_collisions()
+
+    assert block.destroyed is True
+    assert any(event.position == (block.x, block.y) for event in engine.events)
+
+
+def test_lateral_block_collision_does_not_destroy_block():
+    engine = GameEngine()
+    engine.spawn_player("player1")
+    player = engine.world_state.get_player("player1")
+    block = engine.world_state.environment.destructible_blocks[0]
+
+    player.x = block.x - player.width + 2
+    player.y = block.y
+    player.prev_x = player.x - 8
+    player.prev_y = player.y
+    player.vx = 120
+
+    engine.handle_block_collisions()
+
+    assert block.destroyed is False
+
+
+def test_jump_from_platform_destroys_reachable_block():
+    engine = GameEngine()
+    engine.spawn_player("player1")
+    player = engine.world_state.get_player("player1")
+    block = engine.world_state.environment.destructible_blocks[0]
+    platform = engine.platforms[1]
+
+    player.x = block.x + 4
+    player.y = platform.y - player.height
+    player.prev_x = player.x
+    player.prev_y = player.y
+    player.on_ground = True
+
+    engine.tick(1 / 60, {"player1": InputState(jump=True)})
+    for _ in range(30):
+        if block.destroyed:
+            break
+        engine.tick(1 / 60, {"player1": InputState()})
+
+    assert block.destroyed is True
