@@ -305,7 +305,7 @@ class Renderer:
             )
         if sprite_kind == "powerup":
             return self._get_asset_sprite(
-                "Items.png", (TILE_SIZE * 3, 0, TILE_SIZE, TILE_SIZE), width, height
+                "Items.png", self._powerup_source_rect(state), width, height
             )
         if sprite_kind == "gate":
             sprite = self._get_asset_sprite("Castle.png", (0, 0, 80, 80), width, height)
@@ -318,6 +318,24 @@ class Renderer:
                 pygame.draw.rect(sprite, (36, 24, 18), door, width=max(1, width // 18))
             return sprite
         return None
+
+    def _powerup_sprite_state(self, powerup_id: str) -> str:
+        if powerup_id.startswith("coin-"):
+            return "coin"
+        if powerup_id.startswith("flower-"):
+            return "flower"
+        if powerup_id.startswith("mushroom-"):
+            return "mushroom"
+        return "star"
+
+    def _powerup_source_rect(self, state: str) -> tuple[int, int, int, int]:
+        rects = {
+            "coin": (0, TILE_SIZE, TILE_SIZE, TILE_SIZE),
+            "flower": (TILE_SIZE * 2, 0, TILE_SIZE, TILE_SIZE),
+            "mushroom": (0, 0, TILE_SIZE, TILE_SIZE),
+            "star": (TILE_SIZE * 3, 0, TILE_SIZE, TILE_SIZE),
+        }
+        return rects.get(state, rects["star"])
 
     def _render_environment(self, screen: pygame.Surface, world_state: WorldState) -> None:
         for block in world_state.environment.destructible_blocks:
@@ -333,7 +351,10 @@ class Renderer:
                 continue
             screen.blit(
                 self._get_environment_sprite(
-                    "powerup", "available", power_up.width, power_up.height
+                    "powerup",
+                    self._powerup_sprite_state(power_up.powerup_id),
+                    power_up.width,
+                    power_up.height,
                 ),
                 (int(power_up.x), int(power_up.y)),
             )

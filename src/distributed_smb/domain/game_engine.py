@@ -11,6 +11,7 @@ from distributed_smb.shared.input import InputState
 
 BLOCK_SIZE = 36
 POWERUP_SIZE = 34
+COIN_SIZE = 26
 GATE_WIDTH = 54
 GATE_HEIGHT = 96
 
@@ -31,70 +32,72 @@ class GameEngine:
         floor_y = WINDOW_HEIGHT - 90
         self.platforms = [
             Platform(0, floor_y, WINDOW_WIDTH, 60),
-            Platform(165, floor_y - 100, 230, 30),
-            Platform(430, floor_y - 190, 230, 30),
-            Platform(690, floor_y - 100, 205, 30),
-            Platform(720, floor_y - 225, 165, 30),
+            Platform(210, floor_y - 85, 190, 30),
+            Platform(420, floor_y - 135, 180, 30),
+            Platform(620, floor_y - 185, 155, 30),
+            Platform(735, floor_y - 85, 165, 30),
+            Platform(650, floor_y - 250, 230, 30),
+            Platform(365, floor_y - 285, 150, 30),
+            Platform(795, floor_y - 330, 105, 30),
         ]
         self._seed_default_environment()
 
     def _seed_default_environment(self) -> None:
+        floor_y = WINDOW_HEIGHT - 90
         env = self.world_state.environment
         env.destructible_blocks.clear()
         env.power_ups.clear()
         env.cooperative_gates.clear()
 
         self.world_state.add_block(
-            DestructibleBlock(x=230, y=390, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=225, y=floor_y - 236, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
         self.world_state.add_block(
-            DestructibleBlock(x=270, y=390, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=265, y=floor_y - 236, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
         self.world_state.add_block(
-            DestructibleBlock(x=510, y=300, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=430, y=floor_y - 286, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
         self.world_state.add_block(
-            DestructibleBlock(x=550, y=300, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=570, y=floor_y - 336, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
         self.world_state.add_block(
-            DestructibleBlock(x=760, y=265, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=745, y=floor_y - 401, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
 
-        self.world_state.add_power_up(
-            ExclusivePowerUp(
-                x=335,
-                y=486,
-                width=POWERUP_SIZE,
-                height=POWERUP_SIZE,
-                powerup_id="pu-test",
-            )
-        )
-        self.world_state.add_power_up(
-            ExclusivePowerUp(
-                x=610,
-                y=396,
-                width=POWERUP_SIZE,
-                height=POWERUP_SIZE,
-                powerup_id="pu-mid",
-            )
-        )
-        self.world_state.add_power_up(
-            ExclusivePowerUp(
-                x=816,
-                y=361,
-                width=POWERUP_SIZE,
-                height=POWERUP_SIZE,
-                powerup_id="pu-high",
-            )
-        )
+        self._add_power_up("coin-1", 230, floor_y - 85, COIN_SIZE)
+        self._add_power_up("coin-2", 265, floor_y - 85, COIN_SIZE)
+        self._add_power_up("coin-3", 300, floor_y - 85, COIN_SIZE)
+        self._add_power_up("mushroom-1", 350, floor_y - 85, POWERUP_SIZE)
+        self._add_power_up("coin-4", 450, floor_y - 135, COIN_SIZE)
+        self._add_power_up("coin-5", 490, floor_y - 135, COIN_SIZE)
+        self._add_power_up("flower-1", 545, floor_y - 135, POWERUP_SIZE)
+        self._add_power_up("coin-6", 645, floor_y - 185, COIN_SIZE)
+        self._add_power_up("coin-7", 688, floor_y - 185, COIN_SIZE)
+        self._add_power_up("star-1", 670, floor_y - 250, POWERUP_SIZE)
+        self._add_power_up("coin-8", 725, floor_y - 250, COIN_SIZE)
+        self._add_power_up("coin-9", 770, floor_y - 250, COIN_SIZE)
+        self._add_power_up("mushroom-2", 835, floor_y - 330, POWERUP_SIZE)
+        self._add_power_up("flower-2", 420, floor_y - 285, POWERUP_SIZE)
 
         self.world_state.add_gate(
             CooperativeGate(
                 x=820,
-                y=WINDOW_HEIGHT - 90 - GATE_HEIGHT,
+                y=floor_y - 85 - GATE_HEIGHT,
                 width=GATE_WIDTH,
                 height=GATE_HEIGHT,
                 gate_id="gate-test",
+            )
+        )
+
+    def _add_power_up(self, powerup_id: str, x: int, platform_y: int, size: int) -> None:
+        self.world_state.add_power_up(
+            ExclusivePowerUp(
+                x=x,
+                y=platform_y - size,
+                width=size,
+                height=size,
+                powerup_id=powerup_id,
             )
         )
 
