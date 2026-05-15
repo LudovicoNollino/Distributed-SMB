@@ -1,11 +1,17 @@
 """Rendering abstractions for the game client."""
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pygame
 
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
+
+ASSET_DIR = Path(__file__).resolve().parent.parent / "assets" / "mario1"
+MARIO_FRAME_SIZE = 32
+TILE_SIZE = 16
+DISPLAY_TILE_SIZE = 30
 
 
 @dataclass(slots=True)
@@ -17,11 +23,15 @@ class Renderer:
     background_color: tuple[int, int, int] = (135, 206, 235)
     platform_color: tuple[int, int, int] = (90, 60, 40)
     player_palette: dict[str, tuple[int, int, int]] = None
-    _sprite_cache: dict[
-        tuple[tuple[int, int, int], str, int, int, int, int], pygame.Surface
-    ] = field(init=False, default_factory=dict)
+    _sprite_cache: dict[tuple[tuple[int, int, int], str, int, int, int, int], pygame.Surface] = (
+        field(init=False, default_factory=dict)
+    )
     _environment_sprite_cache: dict[tuple[str, str, int, int], pygame.Surface] = field(
         init=False, default_factory=dict
+    )
+    _asset_sheets: dict[str, pygame.Surface | None] = field(init=False, default_factory=dict)
+    _asset_sprite_cache: dict[tuple[str, tuple[int, int, int, int], int, int], pygame.Surface] = (
+        field(init=False, default_factory=dict)
     )
     _facing_by_player: dict[str, int] = field(init=False, default_factory=dict)
 
@@ -115,12 +125,78 @@ class Renderer:
         facing: int,
     ) -> pygame.Surface:
         sprite = pygame.Surface((width, height), pygame.SRCALPHA)
-        shadow = pygame.Rect(width // 5, height - max(4, height // 10), width * 3 // 5, max(4, height // 12))
+        shadow = pygame.Rect(
+            width // 5, height - max(4, height // 10), width * 3 // 5, max(4, height // 12)
+        )
         pygame.draw.ellipse(sprite, (0, 0, 0, 60), shadow)
         self._draw_sprite_frame(sprite, state, frame, body_color)
         if facing < 0:
             sprite = pygame.transform.flip(sprite, True, False)
         return sprite
+
+    def _load_asset_sheet(self, filename: str) -> pygame.Surface | None:
+        if filename in self._asset_sheets:
+            return self._asset_sheets[filename]
+
+        path = ASSET_DIR / filename
+        if not path.exists():
+            self._asset_sheets[filename] = None
+            return None
+
+        try:
+            sheet = pygame.image.load(str(path))
+            try:
+                sheet = sheet.convert_alpha()
+            except pygame.error:
+                sheet = sheet.copy()
+        except pygame.error:
+            sheet = None
+        self._asset_sheets[filename] = sheet
+        return sheet
+ 
+    def _get_asset_sprite(
+        self,
+        filename: str,
+        rect: tuple[int, int, int, int],
+        width: int,
+        height: int,
+    ) -> pygame.Surface | None:
+        cache_key = (filename, rect, width, height)
+        cached = self._asset_sprite_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        sheet = self._load_asset_sheet(filename)
+        if sheet is None:
+            return None
+
+        sprite = pygame.Surface((rect[2], rect[3]), pygame.SRCALPHA)
+        sprite.blit(sheet, (0, 0), pygame.Rect(rect))
+        scaled = pygame.transform.scale(sprite, (width, height))
+        self._asset_sprite_cache[cache_key] = scaled
+        return scaled
+
+    def _render_platforms(self, screen: pygame.Surface, platforms: list[pygame.Rect]) -> None:
+        tile = self._get_asset_sprite(
+            "OverWorld.png",
+            (TILE_SIZE, 0, TILE_SIZE, TILE_SIZE),
+            DISPLAY_TILE_SIZE,
+            DISPLAY_TILE_SIZE,
+        )
+        if tile is None:
+            for platform in platforms:
+                pygame.draw.rect(screen, self.platform_color, platform)
+            return
+
+        for platform in platforms:
+            for y in range(platform.top, platform.bottom, DISPLAY_TILE_SIZE):
+                for x in range(platform.left, platform.right, DISPLAY_TILE_SIZE):
+                    width = min(DISPLAY_TILE_SIZE, platform.right - x)
+                    height = min(DISPLAY_TILE_SIZE, platform.bottom - y)
+                    if width == DISPLAY_TILE_SIZE and height == DISPLAY_TILE_SIZE:
+                        screen.blit(tile, (x, y))
+                    else:
+                        screen.blit(pygame.transform.scale(tile, (width, height)), (x, y))
 
     def _draw_block_surface(self, surface: pygame.Surface) -> None:
         width, height = surface.get_size()
@@ -129,8 +205,12 @@ class Renderer:
         highlight = (224, 160, 98)
         pygame.draw.rect(surface, body, surface.get_rect(), border_radius=max(2, width // 10))
         pygame.draw.rect(surface, mortar, surface.get_rect(), width=max(2, width // 9))
-        pygame.draw.line(surface, mortar, (width // 2, 3), (width // 2, height - 3), max(2, width // 12))
-        pygame.draw.line(surface, mortar, (3, height // 2), (width - 3, height // 2), max(2, height // 12))
+        pygame.draw.line(
+            surface, mortar, (width // 2, 3), (width // 2, height - 3), max(2, width // 12)
+        )
+        pygame.draw.line(
+            surface, mortar, (3, height // 2), (width - 3, height // 2), max(2, height // 12)
+        )
         pygame.draw.line(surface, highlight, (5, 5), (width - 5, 5), max(1, height // 14))
 
     def _draw_powerup_surface(self, surface: pygame.Surface) -> None:
@@ -154,7 +234,9 @@ class Renderer:
             (width * 0.40, height * 0.38),
         ]
         pygame.draw.polygon(surface, star_color, [(round(x), round(y)) for x, y in points])
-        pygame.draw.circle(surface, shine, (round(width * 0.43), round(height * 0.32)), max(2, width // 10))
+        pygame.draw.circle(
+            surface, shine, (round(width * 0.43), round(height * 0.32)), max(2, width // 10)
+        )
 
     def _draw_gate_surface(self, surface: pygame.Surface, state: str) -> None:
         width, height = surface.get_size()
@@ -167,9 +249,13 @@ class Renderer:
         pygame.draw.rect(surface, frame, surface.get_rect(), border_radius=max(2, width // 10))
         inner = surface.get_rect().inflate(-max(4, width // 5), -max(4, height // 8))
         pygame.draw.rect(surface, fill, inner, border_radius=max(2, width // 12))
-        pygame.draw.rect(surface, accent, inner, width=max(2, width // 12), border_radius=max(2, width // 12))
+        pygame.draw.rect(
+            surface, accent, inner, width=max(2, width // 12), border_radius=max(2, width // 12)
+        )
         if state == "open":
-            opening = pygame.Rect(inner.centerx - panel_width // 2, inner.y, panel_width, inner.height)
+            opening = pygame.Rect(
+                inner.centerx - panel_width // 2, inner.y, panel_width, inner.height
+            )
             pygame.draw.rect(surface, (30, 30, 30, 0), opening)
             pygame.draw.rect(surface, (35, 45, 58), opening.inflate(-2, 0))
         else:
@@ -192,15 +278,47 @@ class Renderer:
         if sprite is not None:
             return sprite
 
-        sprite = pygame.Surface((width, height), pygame.SRCALPHA)
-        if sprite_kind == "block":
-            self._draw_block_surface(sprite)
-        elif sprite_kind == "powerup":
-            self._draw_powerup_surface(sprite)
-        elif sprite_kind == "gate":
-            self._draw_gate_surface(sprite, state)
+        sprite = self._build_environment_asset_sprite(sprite_kind, state, width, height)
+        if sprite is None:
+            sprite = pygame.Surface((width, height), pygame.SRCALPHA)
+            if sprite_kind == "block":
+                self._draw_block_surface(sprite)
+            elif sprite_kind == "powerup":
+                self._draw_powerup_surface(sprite)
+            elif sprite_kind == "gate":
+                self._draw_gate_surface(sprite, state)
         self._environment_sprite_cache[cache_key] = sprite
         return sprite
+
+    def _build_environment_asset_sprite(
+        self,
+        sprite_kind: str,
+        state: str,
+        width: int,
+        height: int,
+    ) -> pygame.Surface | None:
+        if sprite_kind == "block":
+            return self._get_asset_sprite(
+                "OverWorld.png",
+                (TILE_SIZE * 3, 0, TILE_SIZE, TILE_SIZE),
+                width,
+                height,
+            )
+        if sprite_kind == "powerup":
+            return self._get_asset_sprite(
+                "Items.png", (TILE_SIZE * 3, 0, TILE_SIZE, TILE_SIZE), width, height
+            )
+        if sprite_kind == "gate":
+            sprite = self._get_asset_sprite("Castle.png", (0, 0, 80, 80), width, height)
+            if sprite is None:
+                return None
+            sprite = sprite.copy()
+            if state == "closed":
+                door = pygame.Rect(width * 0.36, height * 0.58, width * 0.28, height * 0.36)
+                pygame.draw.rect(sprite, (91, 55, 30), door)
+                pygame.draw.rect(sprite, (36, 24, 18), door, width=max(1, width // 18))
+            return sprite
+        return None
 
     def _render_environment(self, screen: pygame.Surface, world_state: WorldState) -> None:
         for block in world_state.environment.destructible_blocks:
@@ -215,7 +333,9 @@ class Renderer:
             if power_up.collected:
                 continue
             screen.blit(
-                self._get_environment_sprite("powerup", "available", power_up.width, power_up.height),
+                self._get_environment_sprite(
+                    "powerup", "available", power_up.width, power_up.height
+                ),
                 (int(power_up.x), int(power_up.y)),
             )
 
@@ -234,15 +354,50 @@ class Renderer:
         cache_key = (color, state, frame, character.width, character.height, facing)
         sprite = self._sprite_cache.get(cache_key)
         if sprite is None:
-            sprite = self._build_sprite(
-                body_color=color,
+            sprite = self._build_player_asset_sprite(
+                character=character,
                 state=state,
                 frame=frame,
-                width=int(character.width),
-                height=int(character.height),
                 facing=facing,
             )
+            if sprite is None:
+                sprite = self._build_sprite(
+                    body_color=color,
+                    state=state,
+                    frame=frame,
+                    width=int(character.width),
+                    height=int(character.height),
+                    facing=facing,
+                )
             self._sprite_cache[cache_key] = sprite
+        return sprite
+
+    def _build_player_asset_sprite(
+        self,
+        *,
+        character: CharacterState,
+        state: str,
+        frame: int,
+        facing: int,
+    ) -> pygame.Surface | None:
+        base_frame = 18 if character.player_id == "player2" else 8
+        if state == "jump":
+            frame_index = base_frame + 5
+        elif state == "walk":
+            frame_index = base_frame + 1 + frame
+        else:
+            frame_index = base_frame
+
+        sprite = self._get_asset_sprite(
+            "Mario.png",
+            (frame_index * MARIO_FRAME_SIZE, 0, MARIO_FRAME_SIZE, MARIO_FRAME_SIZE),
+            int(character.width),
+            int(character.height),
+        )
+        if sprite is None:
+            return None
+        if facing < 0:
+            sprite = pygame.transform.flip(sprite, True, False)
         return sprite
 
     def render(
@@ -254,8 +409,7 @@ class Renderer:
         """Render one frame of the game world."""
         screen.fill(self.background_color)
 
-        for platform in platforms:
-            pygame.draw.rect(screen, self.platform_color, platform)
+        self._render_platforms(screen, platforms)
 
         self._render_environment(screen, world_state)
 
