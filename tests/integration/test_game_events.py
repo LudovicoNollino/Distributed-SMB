@@ -302,8 +302,8 @@ def test_client_applies_block_destroyed_event():
     client = _make_post_lobby_client()
     client.game_event_handler = _ge_handler(client.local_player_id)
 
-    block_pos = (200, 200)
-    block = client.engine.world_state.get_block(block_pos)
+    block = client.engine.world_state.environment.destructible_blocks[0]
+    block_pos = (block.x, block.y)
     assert block is not None, "Test block not found in world state"
     assert not block.destroyed
 
