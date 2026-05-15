@@ -1,5 +1,6 @@
 import pytest
 
+from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.shared.enums import ConnectionStatus
@@ -43,6 +44,13 @@ def test_encode_and_decode_world_state_snapshot():
             "player2": CharacterState(player_id="player2", x=30.0, y=40.0),
         },
     )
+    world_state.add_block(DestructibleBlock(x=120, y=64, destroyed=True))
+    world_state.add_power_up(
+        ExclusivePowerUp(x=150, y=80, powerup_id="star-1", collected=True, owner="player1")
+    )
+    gate = CooperativeGate(x=200, y=90, gate_id="gate-1", state="open")
+    gate.contributions.update({"player1", "player2"})
+    world_state.add_gate(gate)
     snapshot = WorldStateSnapshot(sequence_number=9, world_state=world_state)
 
     decoded = serializer.decode_message(serializer.encode_message(snapshot))
@@ -52,6 +60,13 @@ def test_encode_and_decode_world_state_snapshot():
     assert decoded.world_state.sequence_number == 3
     assert set(decoded.world_state.characters) == {"player1", "player2"}
     assert decoded.world_state.characters["player2"].x == 30.0
+    assert decoded.world_state.environment.destructible_blocks[0].destroyed is True
+    assert decoded.world_state.environment.power_ups["star-1"].owner == "player1"
+    assert decoded.world_state.environment.cooperative_gates["gate-1"].state == "open"
+    assert decoded.world_state.environment.cooperative_gates["gate-1"].contributions == {
+        "player1",
+        "player2",
+    }
 
 
 # ------------------------------------------------------------------
@@ -125,11 +140,17 @@ def test_ws_initial_state_sync_roundtrip():
         sequence_number=5,
         characters={"p1": CharacterState(player_id="p1", x=100.0, y=200.0)},
     )
+    world_state.add_block(DestructibleBlock(x=5, y=8))
+    world_state.add_power_up(ExclusivePowerUp(x=18, y=12, powerup_id="boost"))
+    world_state.add_gate(CooperativeGate(x=42, y=24, gate_id="gate-a", state="closed"))
     msg = InitialStateSync(world_state=world_state)
     decoded = s.decode_ws_message(s.encode_ws_message(msg))
     assert isinstance(decoded, InitialStateSync)
     assert decoded.world_state.sequence_number == 5
     assert decoded.world_state.characters["p1"].x == 100.0
+    assert decoded.world_state.environment.destructible_blocks[0].x == 5
+    assert "boost" in decoded.world_state.environment.power_ups
+    assert decoded.world_state.environment.cooperative_gates["gate-a"].state == "closed"
 
 
 def test_ws_decode_unknown_type_raises():
