@@ -45,19 +45,19 @@ class GameEngine:
         env.cooperative_gates.clear()
 
         self.world_state.add_block(
-            DestructibleBlock(x=230, y=420, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=230, y=390, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
         self.world_state.add_block(
-            DestructibleBlock(x=270, y=420, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=270, y=390, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
         self.world_state.add_block(
-            DestructibleBlock(x=510, y=330, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=510, y=300, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
         self.world_state.add_block(
-            DestructibleBlock(x=550, y=330, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=550, y=300, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
         self.world_state.add_block(
-            DestructibleBlock(x=760, y=295, width=BLOCK_SIZE, height=BLOCK_SIZE)
+            DestructibleBlock(x=760, y=265, width=BLOCK_SIZE, height=BLOCK_SIZE)
         )
 
         self.world_state.add_power_up(
@@ -154,8 +154,7 @@ class GameEngine:
                     if self._is_head_bump(player, block):
                         event = block.destroy()
                         self.events.append(event)
-                    else:
-                        resolve_collision(player, block)
+                    resolve_collision(player, block)
 
     def handle_powerup_collisions(self) -> None:
         for power_up in self.world_state.environment.power_ups.values():
@@ -193,10 +192,17 @@ class GameEngine:
                     resolve_collision(player, gate)
 
     def _is_head_bump(self, player: CharacterState, block: DestructibleBlock) -> bool:
+        previous_top = player.prev_y
+        current_top = player.y
+        block_bottom = block.y + block.height
+        horizontally_overlapping = (
+            player.x < block.x + block.width and player.x + player.width > block.x
+        )
         return (
-            player.vy < 0
-            and player.prev_y >= block.y + block.height
-            and player.y < block.y + block.height
+            horizontally_overlapping
+            and previous_top >= block_bottom - 4
+            and current_top <= block_bottom
+            and player.y + player.height > block.y
         )
 
 
