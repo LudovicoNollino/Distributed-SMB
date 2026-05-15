@@ -11,6 +11,7 @@ from distributed_smb.shared.paths import MARIO1_ASSETS_DIR
 MARIO_FRAME_SIZE = 32
 TILE_SIZE = 16
 DISPLAY_TILE_SIZE = 30
+POWERUP_COLLECTION_EFFECT_MS = 420
 
 
 @dataclass(slots=True)
@@ -33,6 +34,8 @@ class Renderer:
         field(init=False, default_factory=dict)
     )
     _facing_by_player: dict[str, int] = field(init=False, default_factory=dict)
+    _powerup_collected_state: dict[str, bool] = field(init=False, default_factory=dict)
+    _powerup_collection_effects: dict[str, int] = field(init=False, default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.player_palette is None:
@@ -337,6 +340,47 @@ class Renderer:
         }
         return rects.get(state, rects["star"])
 
+    def _render_powerup_collection_effects(
+        self,
+        screen: pygame.Surface,
+        world_state: WorldState,
+        now_ms: int,
+    ) -> None:
+        for powerup_id, started_at in list(self._powerup_collection_effects.items()):
+            power_up = world_state.environment.power_ups.get(powerup_id)
+            if power_up is None:
+                del self._powerup_collection_effects[powerup_id]
+                continue
+
+            progress = (now_ms - started_at) / POWERUP_COLLECTION_EFFECT_MS
+            if progress >= 1:
+                del self._powerup_collection_effects[powerup_id]
+                continue
+
+            state = self._powerup_sprite_state(power_up.powerup_id)
+            scale = 1 + progress * 0.55
+            alpha = max(0, min(255, round(255 * (1 - progress))))
+            width = max(1, round(power_up.width * scale))
+            height = max(1, round(power_up.height * scale))
+            x = round(power_up.x + power_up.width / 2 - width / 2)
+            y = round(power_up.y - progress * 34)
+            sprite = self._get_environment_sprite("powerup", state, width, height).copy()
+            sprite.set_alpha(alpha)
+
+            ring_radius = round(max(power_up.width, power_up.height) * (0.55 + progress * 0.8))
+            ring = pygame.Surface((ring_radius * 2 + 4, ring_radius * 2 + 4), pygame.SRCALPHA)
+            pygame.draw.circle(
+                ring,
+                (255, 246, 156, round(alpha * 0.65)),
+                ring.get_rect().center,
+                ring_radius,
+                width=max(2, round(4 * (1 - progress))),
+            )
+            ring_x = round(power_up.x + power_up.width / 2 - ring.get_width() / 2)
+            ring_y = round(power_up.y + power_up.height / 2 - ring.get_height() / 2)
+            screen.blit(ring, (ring_x, ring_y))
+            screen.blit(sprite, (x, y))
+
     def _render_environment(self, screen: pygame.Surface, world_state: WorldState) -> None:
         for block in world_state.environment.destructible_blocks:
             if block.destroyed:
@@ -346,7 +390,17 @@ class Renderer:
                 (int(block.x), int(block.y)),
             )
 
+        now_ms = pygame.time.get_ticks()
+        seen_powerups = set()
         for power_up in world_state.environment.power_ups.values():
+            seen_powerups.add(power_up.powerup_id)
+            was_collected = self._powerup_collected_state.get(
+                power_up.powerup_id, power_up.collected
+            )
+            if power_up.collected and not was_collected:
+                self._powerup_collection_effects[power_up.powerup_id] = now_ms
+            self._powerup_collected_state[power_up.powerup_id] = power_up.collected
+
             if power_up.collected:
                 continue
             screen.blit(
@@ -358,6 +412,10 @@ class Renderer:
                 ),
                 (int(power_up.x), int(power_up.y)),
             )
+        for powerup_id in set(self._powerup_collected_state) - seen_powerups:
+            del self._powerup_collected_state[powerup_id]
+            self._powerup_collection_effects.pop(powerup_id, None)
+        self._render_powerup_collection_effects(screen, world_state, now_ms)
 
         for gate in world_state.environment.cooperative_gates.values():
             screen.blit(
