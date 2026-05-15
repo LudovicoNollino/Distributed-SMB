@@ -117,3 +117,19 @@ def test_host_solo_world_has_only_one_player():
                 host.lobby_phase(min_players=1)
 
     assert set(host.engine.world_state.characters) == {"player1"}
+
+
+def test_host_can_manually_start_before_min_players():
+    host = _make_host()
+
+    with patch("distributed_smb.application.node_controller.launch_lobby_server"):
+        with patch("distributed_smb.application.node_controller.launch_game_event_server"):
+            with patch("distributed_smb.application.node_controller.time.sleep"):
+                roster = host.lobby_phase(
+                    min_players=2,
+                    start_requested=lambda: True,
+                )
+
+    assert len(roster.players) == 1
+    assert roster.players[0].is_host is True
+    assert set(host.engine.world_state.characters) == {"player1"}
