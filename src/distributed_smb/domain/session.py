@@ -70,3 +70,23 @@ class GameSession:
     def initialize_rejoin_metadata(self):
         """Initialize peer rejoin tracking."""
         self.rejoin_metadata = PeerRejoinMetadata()
+
+    def move_to_waiting_room(self) -> None:
+        """Return the session to the lobby/waiting-room phase."""
+        self.state = SessionPhase.WAITING
+
+    def start(self) -> None:
+        """Mark the session as started and ready for gameplay."""
+        self.state = SessionPhase.PLAYING
+
+    def end(self) -> None:
+        """Mark the session as finished."""
+        self.state = SessionPhase.ENDED
+
+    @property
+    def is_waiting_room(self) -> bool:
+        return self.state is SessionPhase.WAITING
+
+    @property
+    def is_started(self) -> bool:
+        return self.state is SessionPhase.PLAYING

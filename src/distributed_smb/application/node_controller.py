@@ -162,12 +162,14 @@ class NodeController:
         CLIENT: joins the session identified by `session_id` and waits for
         the GameStart broadcast from the host.
         """
+        self.lifecycle.move_to_lobby()
         self._notify_lobby_update("Entering lobby", on_update)
         if self.role is PlayerRole.HOST:
             self._host_lobby_phase(min_players=min_players, on_update=on_update)
         else:
             self._client_lobby_phase(session_id=session_id, on_update=on_update)
         self._rebuild_world_from_roster()
+        self.lifecycle.move_to_game()
         self._notify_lobby_update("Starting game", on_update)
         return self.roster
 
@@ -521,6 +523,8 @@ class NodeController:
 
     def process_frame(self, dt: float, local_input: InputState) -> object:
         """Advance one frame according to the current runtime role."""
+        if not self.lifecycle.is_started:
+            self.lifecycle.move_to_game()
         self.udp_handler.open_socket()
 
         if self.role is PlayerRole.HOST:
