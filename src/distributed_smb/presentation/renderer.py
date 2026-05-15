@@ -1,14 +1,13 @@
 """Rendering abstractions for the game client."""
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import pygame
 
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
+from distributed_smb.shared.paths import MARIO1_ASSETS_DIR
 
-ASSET_DIR = Path(__file__).resolve().parent.parent / "assets" / "mario1"
 MARIO_FRAME_SIZE = 32
 TILE_SIZE = 16
 DISPLAY_TILE_SIZE = 30
@@ -138,7 +137,7 @@ class Renderer:
         if filename in self._asset_sheets:
             return self._asset_sheets[filename]
 
-        path = ASSET_DIR / filename
+        path = MARIO1_ASSETS_DIR / filename
         if not path.exists():
             self._asset_sheets[filename] = None
             return None
@@ -153,7 +152,7 @@ class Renderer:
             sheet = None
         self._asset_sheets[filename] = sheet
         return sheet
- 
+
     def _get_asset_sprite(
         self,
         filename: str,
