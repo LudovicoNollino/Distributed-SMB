@@ -61,6 +61,7 @@ from distributed_smb.shared.roster import GlobalRoster
 
 LOGGER = logging.getLogger(__name__)
 LobbyUpdateCallback = Callable[[str, str, GlobalRoster], bool | None]
+StartRequestedCallback = Callable[[], bool]
 
 
 class LobbyCancelledError(RuntimeError):
@@ -154,6 +155,7 @@ class NodeController:
         session_id: str = "",
         min_players: int = MIN_PLAYERS_TO_START,
         on_update: LobbyUpdateCallback | None = None,
+        start_requested: StartRequestedCallback | None = None,
     ) -> GlobalRoster:
         """Run the lobby coordination phase before gameplay begins.
 
@@ -165,7 +167,11 @@ class NodeController:
         self.lifecycle.move_to_lobby()
         self._notify_lobby_update("Entering lobby", on_update)
         if self.role is PlayerRole.HOST:
-            self._host_lobby_phase(min_players=min_players, on_update=on_update)
+            self._host_lobby_phase(
+                min_players=min_players,
+                on_update=on_update,
+                start_requested=start_requested,
+            )
         else:
             self._client_lobby_phase(session_id=session_id, on_update=on_update)
         self._rebuild_world_from_roster()
@@ -188,6 +194,7 @@ class NodeController:
         *,
         min_players: int,
         on_update: LobbyUpdateCallback | None = None,
+        start_requested: StartRequestedCallback | None = None,
     ) -> GlobalRoster:
         self._notify_lobby_update("Creating lobby server", on_update)
         launch_lobby_server(port=LOBBY_WS_PORT)
@@ -218,6 +225,9 @@ class NodeController:
                     break
             else:
                 self._notify_lobby_update("Waiting for players", on_update)
+            if start_requested is not None and start_requested() and self.roster.players:
+                LOGGER.info("Host manually requested game start")
+                break
             time.sleep(0.05)
 
         launch_game_event_server()

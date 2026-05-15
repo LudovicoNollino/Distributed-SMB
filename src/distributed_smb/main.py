@@ -113,7 +113,11 @@ def main(
             )
 
         try:
-            controller.lobby_phase(session_id=session_id, on_update=update_lobby_screen)
+            controller.lobby_phase(
+                session_id=session_id,
+                on_update=update_lobby_screen,
+                start_requested=lambda: lobby_screen.start_requested,
+            )
             if role is PlayerRole.CLIENT:
                 controller.game_event_handler.connect()
             if not lobby_screen.play_game_start_transition(
