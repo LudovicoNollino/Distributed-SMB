@@ -20,6 +20,46 @@ def test_session_creation():
     assert state.phase == SessionPhase.WAITING
 
 
+def test_session_state_transitions():
+    session = GameSession(session_id="abc", host_player_id="p1")
+
+    assert session.is_waiting_room is True
+    assert session.is_started is False
+
+    session.start()
+
+    assert session.state is SessionPhase.PLAYING
+    assert session.is_started is True
+
+    session.end()
+
+    assert session.state is SessionPhase.ENDED
+
+    session.move_to_waiting_room()
+
+    assert session.state is SessionPhase.WAITING
+
+
+def test_session_state_value_object_transitions():
+    session = GameSession(session_id="abc", host_player_id="p1")
+    state = SessionState(session_info=session)
+
+    assert state.is_waiting_room is True
+
+    state.start()
+
+    assert state.phase is SessionPhase.PLAYING
+    assert state.is_started is True
+
+    state.end()
+
+    assert state.phase is SessionPhase.ENDED
+
+    state.move_to_waiting_room()
+
+    assert state.phase is SessionPhase.WAITING
+
+
 def test_full_flow():
     roster = GlobalRoster()
 

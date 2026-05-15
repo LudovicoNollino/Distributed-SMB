@@ -1,7 +1,17 @@
 import pygame
 
+from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.presentation.renderer import Renderer
+
+
+def test_renderer_loads_mario_asset_pack():
+    renderer = Renderer()
+
+    assert renderer._get_asset_sprite("Mario.png", (8 * 32, 0, 32, 32), 50, 50) is not None
+    assert renderer._get_asset_sprite("OverWorld.png", (16, 0, 16, 16), 32, 32) is not None
+    assert renderer._get_asset_sprite("Items.png", (48, 0, 16, 16), 32, 32) is not None
+    assert renderer._get_asset_sprite("Castle.png", (0, 0, 80, 80), 54, 96) is not None
 
 
 def test_renderer_draws_sprite_instead_of_flat_background(monkeypatch):
@@ -71,3 +81,81 @@ def test_walk_animation_uses_distinct_frames(monkeypatch):
     frame_b = pygame.image.tobytes(renderer._get_player_sprite(character), "RGBA")
 
     assert frame_a != frame_b
+
+
+def test_powerup_ids_use_distinct_item_sprites():
+    renderer = Renderer()
+
+    coin = pygame.image.tobytes(renderer._get_environment_sprite("powerup", "coin", 32, 32), "RGBA")
+    flower = pygame.image.tobytes(
+        renderer._get_environment_sprite("powerup", "flower", 32, 32), "RGBA"
+    )
+    mushroom = pygame.image.tobytes(
+        renderer._get_environment_sprite("powerup", "mushroom", 32, 32), "RGBA"
+    )
+    star = pygame.image.tobytes(renderer._get_environment_sprite("powerup", "star", 32, 32), "RGBA")
+
+    assert len({coin, flower, mushroom, star}) == 4
+
+
+def test_renderer_hides_destroyed_blocks_and_collected_powerups(monkeypatch):
+    monkeypatch.setattr(pygame.time, "get_ticks", lambda: 0)
+    screen = pygame.display.set_mode((200, 200))
+    renderer = Renderer(width=200, height=200)
+    world = WorldState()
+    world.environment.destructible_blocks.append(DestructibleBlock(x=20, y=20, width=32, height=32))
+    world.environment.destructible_blocks.append(
+        DestructibleBlock(x=60, y=20, width=32, height=32, destroyed=True)
+    )
+    world.environment.power_ups["visible"] = ExclusivePowerUp(
+        x=20, y=70, width=32, height=32, powerup_id="visible"
+    )
+    world.environment.power_ups["collected"] = ExclusivePowerUp(
+        x=60, y=70, width=32, height=32, powerup_id="collected", collected=True
+    )
+
+    renderer.render(screen=screen, world_state=world, platforms=[])
+
+    assert screen.get_at((36, 36))[:3] != renderer.background_color
+    assert screen.get_at((76, 36))[:3] == renderer.background_color
+    assert screen.get_at((36, 86))[:3] != renderer.background_color
+    assert screen.get_at((76, 86))[:3] == renderer.background_color
+
+
+def test_renderer_animates_powerup_collection_transition(monkeypatch):
+    tick = 0
+    monkeypatch.setattr(pygame.time, "get_ticks", lambda: tick)
+    screen = pygame.display.set_mode((200, 200))
+    renderer = Renderer(width=200, height=200)
+    world = WorldState()
+    power_up = ExclusivePowerUp(x=50, y=70, width=32, height=32, powerup_id="coin-1")
+    world.environment.power_ups[power_up.powerup_id] = power_up
+
+    renderer.render(screen=screen, world_state=world, platforms=[])
+    power_up.collected = True
+    renderer.render(screen=screen, world_state=world, platforms=[])
+
+    assert screen.get_at((66, 86))[:3] != renderer.background_color
+
+    tick = 500
+    renderer.render(screen=screen, world_state=world, platforms=[])
+
+    assert screen.get_at((66, 86))[:3] == renderer.background_color
+
+
+def test_gate_sprite_changes_between_closed_and_open(monkeypatch):
+    monkeypatch.setattr(pygame.time, "get_ticks", lambda: 0)
+    screen = pygame.display.set_mode((200, 200))
+    renderer = Renderer(width=200, height=200)
+    world = WorldState()
+    gate = CooperativeGate(x=40, y=40, width=40, height=48, gate_id="gate-a", state="closed")
+    world.environment.cooperative_gates["gate-a"] = gate
+
+    renderer.render(screen=screen, world_state=world, platforms=[])
+    closed_pixels = pygame.image.tobytes(screen.subsurface(pygame.Rect(40, 40, 40, 48)), "RGBA")
+
+    gate.state = "open"
+    renderer.render(screen=screen, world_state=world, platforms=[])
+    open_pixels = pygame.image.tobytes(screen.subsurface(pygame.Rect(40, 40, 40, 48)), "RGBA")
+
+    assert closed_pixels != open_pixels
