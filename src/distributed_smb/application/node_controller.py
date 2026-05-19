@@ -1,21 +1,21 @@
-"""Orchestrates presentation, domain, and network components."""
+"""Thin orchestrator: wires domain, network, and presentation components."""
 
 import importlib
-import json
 import logging
-import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from distributed_smb.application.client_gameplay import ClientGameplayMixin
+from distributed_smb.application.game_event_dispatcher import GameEventMixin
+from distributed_smb.application.host_gameplay import HostGameplayMixin
+from distributed_smb.application.lobby_coordinator import (
+    LobbyCancelledError,
+    LobbyMixin,
+    LobbyUpdateCallback,
+    StartRequestedCallback,
+)
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
-from distributed_smb.network.game_event_server import (
-    get_disconnected_player,
-    launch_game_event_server,
-    send_game_event,
-)
-from distributed_smb.network.lobby_service import launch_lobby_server
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.network.udp_handler import UdpHandler
 from distributed_smb.network.ws_handler import WsHandler
@@ -31,45 +31,25 @@ from distributed_smb.shared.config import (
     GAME_EVENT_WS_PORT,
     HOST_PLAYER_ID,
     HOST_UDP_PORT,
-    LOBBY_STARTUP_WAIT,
-    LOBBY_TIMEOUT,
     LOBBY_WS_PORT,
-    MIN_PLAYERS_TO_START,
     TICK_INTERVAL,
-    UDP_INPUT_TIMEOUT,
 )
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
-from distributed_smb.shared.mappers.gameplay_mapper import event_to_message
-from distributed_smb.shared.messages.gameplay import (
-    BlockDestroyedMessage,
-    GateStateChangedMessage,
-    PlayerInputPacket,
-    PlayerLeft,
-    PowerUpCollectedMessage,
-)
-from distributed_smb.shared.messages.session import (
-    GameStart,
-    RosterUpdate,
-    SessionCreate,
-    SessionCreated,
-    SessionJoin,
-    SessionJoined,
-)
-from distributed_smb.shared.messages.sync import WorldStateSnapshot
 from distributed_smb.shared.roster import GlobalRoster
 
 LOGGER = logging.getLogger(__name__)
-LobbyUpdateCallback = Callable[[str, str, GlobalRoster], bool | None]
-StartRequestedCallback = Callable[[], bool]
 
-
-class LobbyCancelledError(RuntimeError):
-    """Raised when the user closes the lobby UI before game start."""
+__all__ = [
+    "NodeController",
+    "LobbyCancelledError",
+    "LobbyUpdateCallback",
+    "StartRequestedCallback",
+]
 
 
 @dataclass(slots=True)
-class NodeController:
+class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEventMixin):
     """Coordinates the node runtime without embedding domain logic."""
 
     lifecycle: NodeLifecycle = field(default_factory=NodeLifecycle)
@@ -132,11 +112,7 @@ class NodeController:
         return self
 
     def build_runtime_context(self) -> dict[str, object]:
-        """Expose the components wired by the controller.
-
-        This keeps the bootstrap contract explicit while the concrete game loop
-        is still being implemented in the next integration step.
-        """
+        """Expose the components wired by the controller."""
         context = {
             "engine": self.engine,
             "renderer": self.renderer,
@@ -149,171 +125,53 @@ class NodeController:
         LOGGER.info("Runtime context ready: %s", ", ".join(sorted(context)))
         return context
 
-    def lobby_phase(
-        self,
-        *,
-        session_id: str = "",
-        min_players: int = MIN_PLAYERS_TO_START,
-        on_update: LobbyUpdateCallback | None = None,
-        start_requested: StartRequestedCallback | None = None,
-    ) -> GlobalRoster:
-        """Run the lobby coordination phase before gameplay begins.
+    def process_frame(self, dt: float, local_input: InputState) -> object:
+        """Advance one frame according to the current runtime role."""
+        if not self.lifecycle.is_started:
+            self.lifecycle.move_to_game()
+        self.udp_handler.open_socket()
 
-        HOST: starts the lobby server, registers itself, waits for enough
-        players, then broadcasts GameStart.
-        CLIENT: joins the session identified by `session_id` and waits for
-        the GameStart broadcast from the host.
-        """
-        self.lifecycle.move_to_lobby()
-        self._notify_lobby_update("Entering lobby", on_update)
         if self.role is PlayerRole.HOST:
-            self._host_lobby_phase(
-                min_players=min_players,
-                on_update=on_update,
-                start_requested=start_requested,
+            self._check_player_disconnections()
+            self._drain_remote_input_packets()
+            authoritative_inputs = self._build_host_inputs(local_input)
+            self.engine.tick(dt, authoritative_inputs)
+            for event in self.engine.events:
+                self._send_game_event(event)
+            self.engine.events.clear()
+            self._send_world_state_snapshot()
+            return self.engine.world_state
+
+        self._send_input_packet(local_input)
+        self.engine.tick(dt, {self.local_player_id: local_input})
+        self.engine.events.clear()
+        self._drain_snapshot_packets()
+        self._drain_game_events()
+        return self.engine.world_state
+
+    def run(self) -> bool:
+        """Run the application if the presentation runtime is available."""
+        if not self.is_bootstrapped:
+            self.bootstrap()
+
+        game_app_class = self._load_game_app_class()
+        if game_app_class is None:
+            LOGGER.info(
+                "Application bootstrap completed, waiting for presentation runtime integration"
             )
-        else:
-            self._client_lobby_phase(session_id=session_id, on_update=on_update)
-        self._rebuild_world_from_roster()
-        self.lifecycle.move_to_game()
-        self._notify_lobby_update("Starting game", on_update)
-        return self.roster
+            return False
 
-    def _notify_lobby_update(
-        self,
-        status: str,
-        on_update: LobbyUpdateCallback | None,
-    ) -> None:
-        if on_update is not None:
-            should_continue = on_update(status, self.session_id, self.roster)
-            if should_continue is False:
-                raise LobbyCancelledError("Lobby was closed before game start")
-
-    def _host_lobby_phase(
-        self,
-        *,
-        min_players: int,
-        on_update: LobbyUpdateCallback | None = None,
-        start_requested: StartRequestedCallback | None = None,
-    ) -> GlobalRoster:
-        self._notify_lobby_update("Creating lobby server", on_update)
-        launch_lobby_server(port=LOBBY_WS_PORT)
-        time.sleep(LOBBY_STARTUP_WAIT)
-
-        self._notify_lobby_update("Connecting to lobby", on_update)
-        self.ws_handler.connect()
-        self.ws_handler.send(
-            SessionCreate(
-                player_id=self.local_player_id,
-                ip=self.local_ip,
-                udp_port=self.udp_handler.port,
-            )
+        LOGGER.info("Delegating execution to presentation runtime")
+        app = game_app_class(
+            frame_handler=self.process_frame,
+            engine=self.engine,
+            input_handler=self.input_handler,
+            renderer=self.renderer,
+            local_player_id=self.local_player_id,
         )
-
-        created: SessionCreated = self._poll_lobby(SessionCreated)
-        self.session_id = created.session_id
-        LOGGER.info("Session created: %s", self.session_id)
-        self._notify_lobby_update("Waiting for players", on_update)
-
-        deadline = time.time() + LOBBY_TIMEOUT
-        while time.time() < deadline:
-            msg = self.ws_handler.poll()
-            if isinstance(msg, RosterUpdate):
-                self.roster = msg.roster
-                self._notify_lobby_update("Waiting for players", on_update)
-                if len(self.roster.players) >= min_players:
-                    break
-            else:
-                self._notify_lobby_update("Waiting for players", on_update)
-            if start_requested is not None and start_requested() and self.roster.players:
-                LOGGER.info("Host manually requested game start")
-                break
-            time.sleep(0.05)
-
-        launch_game_event_server()
-        time.sleep(LOBBY_STARTUP_WAIT)
-        self._notify_lobby_update("Broadcasting game start", on_update)
-        self.ws_handler.send(GameStart(session_id=self.session_id))
-        self._poll_lobby(GameStart)
-        LOGGER.info("Lobby phase complete: %d players", len(self.roster.players))
-
-    def _client_lobby_phase(
-        self,
-        *,
-        session_id: str,
-        on_update: LobbyUpdateCallback | None = None,
-    ) -> None:
-        self._notify_lobby_update("Connecting to lobby", on_update)
-        self.ws_handler.connect()
-        self.ws_handler.send(
-            SessionJoin(
-                session_id=session_id,
-                player_id=self.local_player_id,
-                ip=self.local_ip,
-                port=self.udp_handler.port,
-            )
-        )
-
-        self._poll_lobby(SessionJoined)
-        self._notify_lobby_update("Joined session", on_update)
-
-        deadline = time.time() + LOBBY_TIMEOUT
-        while time.time() < deadline:
-            msg = self.ws_handler.poll()
-            if isinstance(msg, RosterUpdate):
-                self.roster = msg.roster
-                self._notify_lobby_update("Waiting for game start", on_update)
-            elif isinstance(msg, GameStart):
-                self.session_id = msg.session_id
-                self._notify_lobby_update("Starting game", on_update)
-                break
-            else:
-                self._notify_lobby_update("Waiting for game start", on_update)
-            time.sleep(0.05)
-
-        LOGGER.info("Lobby phase complete: session=%s", self.session_id)
-
-    def _poll_lobby(self, expected_type: type, timeout: float = LOBBY_TIMEOUT) -> Any:
-        """Block until a specific message type arrives on the WsHandler inbox."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            msg = self.ws_handler.poll()
-            if msg is None:
-                time.sleep(0.05)
-                continue
-            if isinstance(msg, RosterUpdate):
-                self.roster = msg.roster
-            if isinstance(msg, expected_type):
-                return msg
-        raise TimeoutError(f"Lobby timeout waiting for {expected_type.__name__}")
-
-    def _rebuild_world_from_roster(self) -> None:
-        """Clear world state and spawn only the players confirmed in the roster.
-
-        Also wires remote_host / remote_port from the roster so UDP packets
-        are sent to the peer's real IP even on a LAN (not just 127.0.0.1).
-        """
-        self.engine.world_state.characters.clear()
-        for entry in self.roster.get_all_players():
-            x, y = self._spawn_position_for(entry.player_id)
-            self.engine.spawn_player(entry.player_id, x=x, y=y, join_index=entry.join_index)
-        now = time.time()
-        self.last_input_time = {
-            entry.player_id: now
-            for entry in self.roster.get_all_players()
-            if entry.player_id != self.local_player_id
-        }
-        others = [e for e in self.roster.get_all_players() if e.player_id != self.local_player_id]
-        if others:
-            remote = others[0]
-            self.remote_player_id = remote.player_id
-            self.remote_host = remote.host
-            self.remote_port = remote.udp_port
-            if self.role is PlayerRole.CLIENT:
-                path = f"{GAME_EVENT_WS_PATH}?player_id={self.local_player_id}"
-                self.game_event_handler = WsHandler(
-                    host=remote.host, port=GAME_EVENT_WS_PORT, path=path
-                )
+        app.run()
+        self.udp_handler.close_socket()
+        return True
 
     def _configure_role(self, *, packet_drop_rate: float) -> None:
         """Configure ports and player identities for host or client mode."""
@@ -368,189 +226,3 @@ class NodeController:
             LOGGER.warning("presentation.app found, but GameApp is missing")
             return None
         return game_app_class
-
-    def run(self) -> bool:
-        """Run the application if the presentation runtime is available."""
-        if not self.is_bootstrapped:
-            self.bootstrap()
-
-        game_app_class = self._load_game_app_class()
-        if game_app_class is None:
-            LOGGER.info(
-                "Application bootstrap completed, waiting for presentation runtime integration"
-            )
-            return False
-
-        LOGGER.info("Delegating execution to presentation runtime")
-        app = game_app_class(
-            frame_handler=self.process_frame,
-            engine=self.engine,
-            input_handler=self.input_handler,
-            renderer=self.renderer,
-            local_player_id=self.local_player_id,
-        )
-        app.run()
-        self.udp_handler.close_socket()
-        return True
-
-    def _drain_remote_input_packets(self) -> None:
-        """Poll incoming client input packets and cache the latest valid ones."""
-        while True:
-            packet = self.udp_handler.receive_packet_nowait()
-            if packet is None:
-                return
-            payload, _address = packet
-            decoded = self.serializer.decode_message(payload)
-            if not isinstance(decoded, PlayerInputPacket):
-                continue
-
-            last_sequence = self.last_remote_input_sequence.get(decoded.player_id, -1)
-            if decoded.sequence_number <= last_sequence:
-                continue
-
-            self.last_remote_input_sequence[decoded.player_id] = decoded.sequence_number
-            self.cached_remote_inputs[decoded.player_id] = decoded.input_state
-            self.last_input_time[decoded.player_id] = time.time()
-            self.received_input_packets += 1
-
-    def _drain_snapshot_packets(self) -> None:
-        """Poll incoming snapshots and keep only the newest authoritative state."""
-        while True:
-            packet = self.udp_handler.receive_packet_nowait()
-            if packet is None:
-                return
-            payload, _address = packet
-            decoded = self.serializer.decode_message(payload)
-            if not isinstance(decoded, WorldStateSnapshot):
-                continue
-            if decoded.sequence_number <= self.last_snapshot_sequence:
-                continue
-
-            self.last_snapshot_sequence = decoded.sequence_number
-            self.engine.world_state = decoded.world_state
-            self.received_snapshots += 1
-
-    def _build_host_inputs(self, local_input: InputState) -> dict[str, InputState]:
-        """Combine local and remote input streams into one authoritative map."""
-        return {
-            self.local_player_id: local_input,
-            self.remote_player_id: self.cached_remote_inputs.get(
-                self.remote_player_id,
-                InputState(),
-            ),
-        }
-
-    def _send_world_state_snapshot(self) -> None:
-        """Broadcast the authoritative world state to the remote client."""
-        snapshot = WorldStateSnapshot(
-            sequence_number=self.engine.world_state.sequence_number,
-            world_state=self.engine.world_state,
-        )
-        payload = self.serializer.encode_message(snapshot)
-        self.udp_handler.send_packet_nowait(payload, self.remote_host, self.remote_port)
-        self.sent_snapshots += 1
-
-    def _send_input_packet(self, local_input: InputState) -> None:
-        """Send the local client's input packet to the authoritative host."""
-        self.input_sequence_number += 1
-        packet = PlayerInputPacket(
-            player_id=self.local_player_id,
-            sequence_number=self.input_sequence_number,
-            input_state=local_input,
-        )
-        payload = self.serializer.encode_message(packet)
-        self.udp_handler.send_packet_nowait(payload, self.remote_host, self.remote_port)
-        self.sent_input_packets += 1
-
-    def _send_game_event(self, event: object) -> None:
-        """Convert a domain event to a network message and broadcast to all clients."""
-        msg = event_to_message(event)
-        if msg is None:
-            LOGGER.warning("No message mapping for event: %s", type(event).__name__)
-            return
-        payload = json.dumps(self.serializer.encode_ws_message(msg)).encode()
-        send_game_event(payload)
-        LOGGER.info("game event sent: %s", msg)
-
-    def _evict_player(self, pid: str) -> None:
-        """Remove a player from the local world and clean up associated state."""
-        self.engine.world_state.remove_player(pid)
-        self.roster.remove_player(pid)
-        self.cached_remote_inputs.pop(pid, None)
-        self.last_remote_input_sequence.pop(pid, None)
-        self.last_input_time.pop(pid, None)
-
-    def _send_player_left(self, pid: str) -> None:
-        """Broadcast a PlayerLeft message to all remaining clients."""
-        msg = PlayerLeft(player_id=pid)
-        payload = json.dumps(self.serializer.encode_ws_message(msg)).encode()
-        send_game_event(payload)
-        LOGGER.info("PlayerLeft broadcast: %s", pid)
-
-    def _check_player_disconnections(self) -> None:
-        """Detect players that dropped their connection (WebSocket or UDP) and evict them."""
-        while True:
-            pid = get_disconnected_player()
-            if pid is None:
-                break
-            LOGGER.info("Player left the game (WebSocket): %s", pid)
-            self._evict_player(pid)
-            self._send_player_left(pid)
-
-        now = time.time()
-        for pid in list(self.last_input_time):
-            if now - self.last_input_time[pid] > UDP_INPUT_TIMEOUT:
-                LOGGER.info("Player left the game (UDP timeout): %s", pid)
-                self._evict_player(pid)
-                self._send_player_left(pid)
-
-    def _drain_game_events(self) -> None:
-        """Poll incoming game events and apply them to the local world state."""
-        while True:
-            msg = self.game_event_handler.poll()
-            if msg is None:
-                return
-            if isinstance(msg, BlockDestroyedMessage):
-                block = self.engine.world_state.get_block(msg.position)
-                if block and not block.destroyed:
-                    block.destroyed = True
-                    LOGGER.info("game event applied: %s", msg)
-            elif isinstance(msg, PowerUpCollectedMessage):
-                pu = self.engine.world_state.get_power_up(msg.powerup_id)
-                if pu:
-                    pu.collected = True
-                    pu.owner = msg.player_id
-                    LOGGER.info("game event applied: %s", msg)
-            elif isinstance(msg, GateStateChangedMessage):
-                LOGGER.info("game event received: %s", msg)
-                gate = self.engine.world_state.get_gate(msg.gate_id)
-                if gate:
-                    gate.state = msg.new_state
-                    LOGGER.info("game event applied: %s", msg)
-            elif isinstance(msg, PlayerLeft):
-                LOGGER.info("Player left (received): %s", msg.player_id)
-                self._evict_player(msg.player_id)
-
-    def process_frame(self, dt: float, local_input: InputState) -> object:
-        """Advance one frame according to the current runtime role."""
-        if not self.lifecycle.is_started:
-            self.lifecycle.move_to_game()
-        self.udp_handler.open_socket()
-
-        if self.role is PlayerRole.HOST:
-            self._check_player_disconnections()
-            self._drain_remote_input_packets()
-            authoritative_inputs = self._build_host_inputs(local_input)
-            self.engine.tick(dt, authoritative_inputs)
-            for event in self.engine.events:
-                self._send_game_event(event)
-            self.engine.events.clear()
-            self._send_world_state_snapshot()
-            return self.engine.world_state
-
-        self._send_input_packet(local_input)
-        self.engine.tick(dt, {self.local_player_id: local_input})
-        self.engine.events.clear()
-        self._drain_snapshot_packets()
-        self._drain_game_events()
-        return self.engine.world_state

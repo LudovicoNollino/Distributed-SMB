@@ -83,9 +83,9 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
 
     def run_host():
         try:
-            with patch("distributed_smb.application.node_controller.launch_lobby_server"):
-                with patch("distributed_smb.application.node_controller.launch_game_event_server"):
-                    with patch("distributed_smb.application.node_controller.time.sleep"):
+            with patch("distributed_smb.application.lobby_coordinator.launch_lobby_server"):
+                with patch("distributed_smb.application.lobby_coordinator.launch_game_event_server"):
+                    with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
                         host.lobby_phase(min_players=2)
         except Exception as exc:
             errors.append(exc)
@@ -234,7 +234,7 @@ def test_host_evicts_player_on_udp_timeout():
 
     host.last_input_time["player2"] = time.time() - UDP_INPUT_TIMEOUT - 1.0
 
-    with patch("distributed_smb.application.node_controller.send_game_event"):
+    with patch("distributed_smb.application.game_event_dispatcher.send_game_event"):
         host._check_player_disconnections()
 
     assert "player2" not in host.engine.world_state.characters
@@ -264,7 +264,7 @@ def test_host_broadcasts_player_left_on_udp_timeout():
     def capture(payload: bytes) -> None:
         sent_payloads.append(payload)
 
-    with patch("distributed_smb.application.node_controller.send_game_event", side_effect=capture):
+    with patch("distributed_smb.application.game_event_dispatcher.send_game_event", side_effect=capture):
         host._check_player_disconnections()
 
     assert len(sent_payloads) == 1
@@ -324,13 +324,13 @@ def test_client_applies_powerup_collected_event():
     client = _make_post_lobby_client()
     client.game_event_handler = _ge_handler(client.local_player_id)
 
-    pu = client.engine.world_state.get_power_up("pu-test")
+    pu = client.engine.world_state.get_power_up("coin-1")
     assert pu is not None, "Test power-up not found in world state"
     assert not pu.collected
 
     payload = json.dumps(
         _serializer.encode_ws_message(
-            PowerUpCollectedMessage(powerup_id="pu-test", player_id="player1")
+            PowerUpCollectedMessage(powerup_id="coin-1", player_id="player1")
         )
     ).encode()
     send_game_event(payload)
