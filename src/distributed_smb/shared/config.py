@@ -48,3 +48,11 @@ PLAYER_WIDTH = int(50 * WORLD_SCALE)
 PLAYER_HEIGHT = int(50 * WORLD_SCALE)
 
 MAX_PLAYERS = 4
+
+# M5 — client-side prediction and reconciliation
+# Positional error (px) above which the client rolls back and replays inputs.
+DIVERGENCE_THRESHOLD: float = 20.0
+# Number of frames of input history kept for post-reconciliation replay.
+INPUT_HISTORY_SIZE: int = 60
+# Artificial one-way network latency injected by UdpHandler (ms). 0 = disabled.
+ARTIFICIAL_LATENCY_MS: int = 0
