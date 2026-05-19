@@ -14,6 +14,10 @@ from distributed_smb.application.lobby_coordinator import (
     LobbyUpdateCallback,
     StartRequestedCallback,
 )
+from distributed_smb.application.reconciliation import (
+    NoopPredictionEngine,
+    PredictionEngineProtocol,
+)
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
 from distributed_smb.network.serializer import Serializer
@@ -87,6 +91,7 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     sent_snapshots: int = 0
     received_snapshots: int = 0
     last_input_time: dict[str, float] = field(default_factory=dict)
+    prediction_engine: PredictionEngineProtocol = field(default_factory=NoopPredictionEngine)
 
     def bootstrap(
         self,
