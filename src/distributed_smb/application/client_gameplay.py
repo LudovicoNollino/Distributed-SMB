@@ -25,7 +25,7 @@ class ClientGameplayMixin:
         return self.engine.world_state
 
     def _drain_snapshot_packets(self) -> None:
-        """Poll incoming snapshots and apply the newest authoritative state."""
+        """Poll incoming snapshots and reconcile local predicted state with authority."""
         while True:
             packet = self.udp_handler.receive_packet_nowait()
             if packet is None:
@@ -38,7 +38,7 @@ class ClientGameplayMixin:
                 continue
 
             self.last_snapshot_sequence = decoded.sequence_number
-            self.engine.world_state = decoded.world_state
+            self.prediction_engine.reconcile(decoded)
             self.received_snapshots += 1
 
     def _send_input_packet(self, local_input: InputState) -> None:

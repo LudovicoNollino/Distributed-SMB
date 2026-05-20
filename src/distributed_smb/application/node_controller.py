@@ -93,6 +93,10 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     last_input_time: dict[str, float] = field(default_factory=dict)
     prediction_engine: PredictionEngineProtocol = field(default_factory=NoopPredictionEngine)
 
+    def __post_init__(self) -> None:
+        if isinstance(self.prediction_engine, NoopPredictionEngine):
+            self.prediction_engine._engine = self.engine
+
     def bootstrap(
         self,
         *,
