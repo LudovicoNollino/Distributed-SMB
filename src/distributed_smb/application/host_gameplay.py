@@ -50,3 +50,15 @@ class HostGameplayMixin:
         payload = self.serializer.encode_message(snapshot)
         self.udp_handler.send_packet_nowait(payload, self.remote_host, self.remote_port)
         self.sent_snapshots += 1
+
+    def _process_host_frame(self, dt: float, local_input: InputState) -> object:
+        """Run one authoritative host frame: drain inputs, tick, broadcast snapshot."""
+        self._check_player_disconnections()
+        self._drain_remote_input_packets()
+        authoritative_inputs = self._build_host_inputs(local_input)
+        self.engine.tick(dt, authoritative_inputs)
+        for event in self.engine.events:
+            self._send_game_event(event)
+        self.engine.events.clear()
+        self._send_world_state_snapshot()
+        return self.engine.world_state

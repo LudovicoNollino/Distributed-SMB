@@ -16,7 +16,12 @@ class PredictionEngineProtocol(Protocol):
     """Encapsulates client-side prediction, input buffering, and reconciliation."""
 
     def predict(self, input_state: InputState) -> None:
-        """Apply input locally before host confirmation and save the predicted state."""
+        """Record the input and snapshot the current engine state before the tick.
+
+        NOTE: does NOT call engine.tick() — the caller is responsible for
+        ticking the engine after this call. This avoids double-tick when
+        the real implementation is wired in.
+        """
         ...
 
     def reconcile(self, authoritative_snapshot: WorldStateSnapshot) -> None:

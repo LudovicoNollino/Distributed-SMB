@@ -135,24 +135,9 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
         if not self.lifecycle.is_started:
             self.lifecycle.move_to_game()
         self.udp_handler.open_socket()
-
         if self.role is PlayerRole.HOST:
-            self._check_player_disconnections()
-            self._drain_remote_input_packets()
-            authoritative_inputs = self._build_host_inputs(local_input)
-            self.engine.tick(dt, authoritative_inputs)
-            for event in self.engine.events:
-                self._send_game_event(event)
-            self.engine.events.clear()
-            self._send_world_state_snapshot()
-            return self.engine.world_state
-
-        self._send_input_packet(local_input)
-        self.engine.tick(dt, {self.local_player_id: local_input})
-        self.engine.events.clear()
-        self._drain_snapshot_packets()
-        self._drain_game_events()
-        return self.engine.world_state
+            return self._process_host_frame(dt, local_input)
+        return self._process_client_frame(dt, local_input)
 
     def run(self) -> bool:
         """Run the application if the presentation runtime is available."""

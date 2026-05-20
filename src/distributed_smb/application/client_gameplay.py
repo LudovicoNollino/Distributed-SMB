@@ -1,6 +1,7 @@
 """Client-side frame synchronisation mixin.
 
-M5 insertion point: prediction and reconciliation logic belongs here.
+M5 insertion point: _process_client_frame() is where prediction and
+reconciliation integrate. Steps 3 and 4 modify only this file.
 """
 
 import logging
@@ -13,6 +14,16 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ClientGameplayMixin:
+    def _process_client_frame(self, dt: float, local_input: InputState) -> object:
+        """Run one client frame: send input, predict, tick, reconcile, drain events."""
+        self._send_input_packet(local_input)
+        self.prediction_engine.predict(local_input)
+        self.engine.tick(dt, {self.local_player_id: local_input})
+        self.engine.events.clear()
+        self._drain_snapshot_packets()
+        self._drain_game_events()
+        return self.engine.world_state
+
     def _drain_snapshot_packets(self) -> None:
         """Poll incoming snapshots and apply the newest authoritative state."""
         while True:
