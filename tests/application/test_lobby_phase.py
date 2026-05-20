@@ -74,7 +74,9 @@ def test_host_and_client_lobby_phase():
     def run_host():
         try:
             with patch("distributed_smb.application.lobby_coordinator.launch_lobby_server"):
-                with patch("distributed_smb.application.lobby_coordinator.launch_game_event_server"):
+                with patch(
+                    "distributed_smb.application.lobby_coordinator.launch_game_event_server"
+                ):
                     with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
                         host.lobby_phase(min_players=2)
         except Exception as exc:

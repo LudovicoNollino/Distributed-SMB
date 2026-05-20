@@ -46,9 +46,10 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
 
     def run_host():
         try:
-            with patch("distributed_smb.application.lobby_coordinator.launch_lobby_server"):
-                with patch("distributed_smb.application.lobby_coordinator.launch_game_event_server"):
-                    with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+            lobby = "distributed_smb.application.lobby_coordinator"
+            with patch(f"{lobby}.launch_lobby_server"):
+                with patch(f"{lobby}.launch_game_event_server"):
+                    with patch(f"{lobby}.time.sleep"):
                         host.lobby_phase(min_players=2)
         except Exception as exc:
             errors.append(exc)

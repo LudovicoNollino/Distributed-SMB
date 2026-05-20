@@ -2,7 +2,10 @@
 
 from distributed_smb.application.reconciliation.noop import NoopPredictionEngine
 from distributed_smb.application.reconciliation.protocol import PredictionEngineProtocol
-from distributed_smb.application.reconciliation.shadow_copy import NoopShadowCopy, ShadowCopyProtocol
+from distributed_smb.application.reconciliation.shadow_copy import (
+    NoopShadowCopy,
+    ShadowCopyProtocol,
+)
 
 __all__ = [
     "PredictionEngineProtocol",

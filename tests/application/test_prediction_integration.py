@@ -1,7 +1,10 @@
 """Integration tests for M5 prediction and reconciliation wiring."""
 
 from distributed_smb.application.node_controller import NodeController
-from distributed_smb.application.reconciliation import NoopPredictionEngine, PredictionEngineProtocol
+from distributed_smb.application.reconciliation import (
+    NoopPredictionEngine,
+    PredictionEngineProtocol,
+)
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.shared.config import (
     ARTIFICIAL_LATENCY_MS,
@@ -13,7 +16,6 @@ from distributed_smb.shared.config import (
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -222,6 +224,7 @@ def test_artificial_latency_is_zero_by_default():
 def test_input_history_covers_at_least_one_second():
     """INPUT_HISTORY_SIZE frames at 60 fps must cover at least 1 s of history."""
     from distributed_smb.shared.config import TICK_RATE
+
     assert INPUT_HISTORY_SIZE >= TICK_RATE
 
 

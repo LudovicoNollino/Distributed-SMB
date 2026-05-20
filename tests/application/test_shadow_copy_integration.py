@@ -8,19 +8,15 @@ can drop in the real interpolation implementation without conflicts.
 import time
 from unittest.mock import patch
 
-import pytest
-
 from distributed_smb.application.node_controller import NodeController
 from distributed_smb.application.reconciliation import (
     NoopShadowCopy,
     ShadowCopyProtocol,
 )
-from distributed_smb.application.reconciliation.shadow_copy import ShadowCopyProtocol
 from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
-
 
 # ---------------------------------------------------------------------------
 # Protocol conformance
@@ -276,9 +272,7 @@ def test_reconciliation_at_50ms_corrects_position():
 
     # Authoritative position that differs from the current local state
     authoritative_x = 999.0
-    auth_state = CharacterState(
-        player_id=ctrl.local_player_id, x=authoritative_x, y=100
-    )
+    auth_state = CharacterState(player_id=ctrl.local_player_id, x=authoritative_x, y=100)
     snapshot = _make_snapshot(seq=1, characters={ctrl.local_player_id: auth_state})
     payload = ctrl.serializer.encode_message(snapshot)
 
