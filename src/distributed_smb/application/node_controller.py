@@ -16,7 +16,9 @@ from distributed_smb.application.lobby_coordinator import (
 )
 from distributed_smb.application.reconciliation import (
     NoopPredictionEngine,
+    NoopShadowCopy,
     PredictionEngineProtocol,
+    ShadowCopyProtocol,
 )
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
@@ -92,21 +94,37 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     received_snapshots: int = 0
     last_input_time: dict[str, float] = field(default_factory=dict)
     prediction_engine: PredictionEngineProtocol = field(default_factory=NoopPredictionEngine)
+    shadow_copies: dict[str, ShadowCopyProtocol] = field(default_factory=dict)
+    shadow_copy_factory: type = field(default=NoopShadowCopy)
 
     def __post_init__(self) -> None:
         if isinstance(self.prediction_engine, NoopPredictionEngine):
             self.prediction_engine._engine = self.engine
+
+    def _init_shadow_copies(self) -> None:
+        """Initialise one ShadowCopy per remote player (CLIENT only, called after lobby)."""
+        if self.role is not PlayerRole.CLIENT:
+            return
+        self.shadow_copies = {
+            pid: self.shadow_copy_factory()
+            for pid in self.engine.world_state.characters
+            if pid != self.local_player_id
+        }
 
     def bootstrap(
         self,
         *,
         role: PlayerRole = PlayerRole.HOST,
         packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
+        artificial_latency_ms: int = 0,
     ) -> "NodeController":
         """Prepare the application components for the future runtime loop."""
         LOGGER.info("Bootstrapping node controller")
         self.role = role
-        self._configure_role(packet_drop_rate=packet_drop_rate)
+        self._configure_role(
+            packet_drop_rate=packet_drop_rate,
+            artificial_latency_ms=artificial_latency_ms,
+        )
         self._bootstrap_world()
         self.lifecycle.move_to_idle()
         self.is_bootstrapped = True
@@ -167,7 +185,7 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
         self.udp_handler.close_socket()
         return True
 
-    def _configure_role(self, *, packet_drop_rate: float) -> None:
+    def _configure_role(self, *, packet_drop_rate: float, artificial_latency_ms: int = 0) -> None:
         """Configure ports and player identities for host or client mode."""
         if self.role is PlayerRole.HOST:
             self.local_player_id = HOST_PLAYER_ID
@@ -177,6 +195,7 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
                 host="0.0.0.0",
                 port=HOST_UDP_PORT,
                 packet_drop_rate=packet_drop_rate,
+                artificial_latency_ms=artificial_latency_ms,
             )
             self.remote_port = CLIENT_UDP_PORT
         else:
@@ -187,6 +206,7 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
                 host="0.0.0.0",
                 port=CLIENT_UDP_PORT,
                 packet_drop_rate=packet_drop_rate,
+                artificial_latency_ms=artificial_latency_ms,
             )
             self.remote_port = HOST_UDP_PORT
 

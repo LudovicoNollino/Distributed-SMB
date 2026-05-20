@@ -6,7 +6,12 @@ import logging
 from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
 from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.presentation.lobby_screen import LobbyScreen
-from distributed_smb.shared.config import DEFAULT_HOST, DEFAULT_PACKET_DROP_RATE, LOBBY_WS_PORT
+from distributed_smb.shared.config import (
+    ARTIFICIAL_LATENCY_MS,
+    DEFAULT_HOST,
+    DEFAULT_PACKET_DROP_RATE,
+    LOBBY_WS_PORT,
+)
 from distributed_smb.shared.enums import PlayerRole
 
 
@@ -14,9 +19,14 @@ def build_controller(
     *,
     role: PlayerRole = PlayerRole.HOST,
     packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
+    artificial_latency_ms: int = ARTIFICIAL_LATENCY_MS,
 ) -> NodeController:
     """Create and bootstrap the application's central controller."""
-    controller = NodeController().bootstrap(role=role, packet_drop_rate=packet_drop_rate)
+    controller = NodeController().bootstrap(
+        role=role,
+        packet_drop_rate=packet_drop_rate,
+        artificial_latency_ms=artificial_latency_ms,
+    )
     controller.build_runtime_context()
     return controller
 
@@ -25,10 +35,15 @@ def get_controller(
     *,
     role: PlayerRole = PlayerRole.HOST,
     packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
+    artificial_latency_ms: int = ARTIFICIAL_LATENCY_MS,
 ) -> NodeController:
     """Get a bootstrapped controller without starting the GUI (for testing)."""
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-    return build_controller(role=role, packet_drop_rate=packet_drop_rate)
+    return build_controller(
+        role=role,
+        packet_drop_rate=packet_drop_rate,
+        artificial_latency_ms=artificial_latency_ms,
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -61,6 +76,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_HOST,
         help="This machine's IP on the LAN, advertised to peers via the lobby",
     )
+    parser.add_argument(
+        "--latency",
+        type=int,
+        default=ARTIFICIAL_LATENCY_MS,
+        metavar="MS",
+        help="Artificial send-side latency in milliseconds (default: 0)",
+    )
     return parser.parse_args(argv)
 
 
@@ -69,6 +91,7 @@ def main(
     run_app: bool = False,
     role: PlayerRole = PlayerRole.HOST,
     packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
+    artificial_latency_ms: int = ARTIFICIAL_LATENCY_MS,
     host_ip: str = DEFAULT_HOST,
     local_ip: str = DEFAULT_HOST,
     session_id: str = "",
@@ -76,7 +99,11 @@ def main(
     """Bootstrap the local node and start the graphical application."""
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     logging.info("Starting Distributed SMB in %s mode", role)
-    controller = build_controller(role=role, packet_drop_rate=packet_drop_rate)
+    controller = build_controller(
+        role=role,
+        packet_drop_rate=packet_drop_rate,
+        artificial_latency_ms=artificial_latency_ms,
+    )
     controller.local_ip = local_ip
 
     if run_app:
@@ -170,6 +197,7 @@ if __name__ == "__main__":
         run_app=True,
         role=selected_role,
         packet_drop_rate=args.drop_rate,
+        artificial_latency_ms=args.latency,
         host_ip=args.host_ip,
         local_ip=args.local_ip,
         session_id=args.session_id,

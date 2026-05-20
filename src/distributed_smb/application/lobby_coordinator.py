@@ -57,6 +57,7 @@ class LobbyMixin:
         else:
             self._client_lobby_phase(session_id=session_id, on_update=on_update)
         self._rebuild_world_from_roster()
+        self._init_shadow_copies()
         self.lifecycle.move_to_game()
         self._notify_lobby_update("Starting game", on_update)
         return self.roster
