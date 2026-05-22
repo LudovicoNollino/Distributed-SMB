@@ -84,9 +84,10 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
 
     def run_host():
         try:
-            with patch("distributed_smb.application.node_controller.launch_lobby_server"):
-                with patch("distributed_smb.application.node_controller.launch_game_event_server"):
-                    with patch("distributed_smb.application.node_controller.time.sleep"):
+            lobby = "distributed_smb.application.lobby_coordinator"
+            with patch(f"{lobby}.launch_lobby_server"):
+                with patch(f"{lobby}.launch_game_event_server"):
+                    with patch(f"{lobby}.time.sleep"):
                         host.lobby_phase(min_players=2)
         except Exception as exc:
             errors.append(exc)
@@ -235,7 +236,7 @@ def test_host_evicts_player_on_udp_timeout():
 
     host.last_input_time["player2"] = time.time() - UDP_INPUT_TIMEOUT - 1.0
 
-    with patch("distributed_smb.application.node_controller.send_game_event"):
+    with patch("distributed_smb.application.game_event_dispatcher.send_game_event"):
         host._check_player_disconnections()
 
     assert "player2" not in host.engine.world_state.characters
@@ -265,7 +266,8 @@ def test_host_broadcasts_player_left_on_udp_timeout():
     def capture(payload: bytes) -> None:
         sent_payloads.append(payload)
 
-    with patch("distributed_smb.application.node_controller.send_game_event", side_effect=capture):
+    dispatcher = "distributed_smb.application.game_event_dispatcher"
+    with patch(f"{dispatcher}.send_game_event", side_effect=capture):
         host._check_player_disconnections()
 
     assert len(sent_payloads) == 1

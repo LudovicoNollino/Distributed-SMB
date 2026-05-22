@@ -67,8 +67,9 @@ class PredictionEngine:
         matching_entry = self.buffer.find(authoritative_snapshot.sequence_number)
         self.buffer.acknowledge(authoritative_snapshot.sequence_number)
 
+        pending_inputs = self.buffer.get_unacknowledged()
+
         if matching_entry is None:
-            pending_inputs = self.buffer.get_unacknowledged()
             self.engine.world_state = deepcopy(authoritative_snapshot)
             if pending_inputs:
                 self._replay_pending(pending_inputs, dt)
@@ -77,7 +78,12 @@ class PredictionEngine:
 
         if self.should_rollback(matching_entry.predicted_state_snapshot, authoritative_snapshot):
             self.engine.world_state = deepcopy(authoritative_snapshot)
-            pending_inputs = self.buffer.get_unacknowledged()
+            if pending_inputs:
+                self._replay_pending(pending_inputs, dt)
+            return True
+
+        if pending_inputs:
+            self.engine.world_state = deepcopy(authoritative_snapshot)
             self._replay_pending(pending_inputs, dt)
             return True
 
