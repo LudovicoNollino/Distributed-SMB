@@ -32,6 +32,7 @@ MIN_PLAYERS_TO_START = 2
 
 TICK_RATE = 60
 TICK_INTERVAL = 1.0 / TICK_RATE
+DIVERGENCE_THRESHOLD = 5.0
 
 # Base resolution used as logical reference.
 BASE_WINDOW_WIDTH = 640

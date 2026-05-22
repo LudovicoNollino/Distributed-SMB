@@ -33,11 +33,7 @@ def test_renderer_draws_sprite_instead_of_flat_background(monkeypatch):
 
     renderer.render(screen=screen, world_state=world, platforms=[])
 
-    sprite_pixels = [
-        screen.get_at((x, y))[:3]
-        for x in range(40, 90)
-        for y in range(30, 80)
-    ]
+    sprite_pixels = [screen.get_at((x, y))[:3] for x in range(40, 90) for y in range(30, 80)]
     assert any(pixel != renderer.background_color for pixel in sprite_pixels)
 
 

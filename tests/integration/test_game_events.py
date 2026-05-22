@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from distributed_smb.application.node_controller import NodeController
+from distributed_smb.domain.entity import ExclusivePowerUp
 from distributed_smb.network.game_event_server import (
     launch_game_event_server,
     send_game_event,
@@ -323,7 +324,7 @@ def test_client_applies_powerup_collected_event():
     """Client marks a power-up as collected and sets owner on PowerUpCollectedMessage."""
     client = _make_post_lobby_client()
     client.game_event_handler = _ge_handler(client.local_player_id)
-
+    client.engine.world_state.add_power_up(ExclusivePowerUp(0, 0, "pu-test"))
     pu = client.engine.world_state.get_power_up("pu-test")
     assert pu is not None, "Test power-up not found in world state"
     assert not pu.collected
