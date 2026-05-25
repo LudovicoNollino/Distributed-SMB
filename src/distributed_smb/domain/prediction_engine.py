@@ -8,8 +8,9 @@ from typing import Deque
 
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.world import WorldState
-from distributed_smb.shared.config import DIVERGENCE_THRESHOLD
+from distributed_smb.shared.config import DIVERGENCE_THRESHOLD, TICK_INTERVAL
 from distributed_smb.shared.input import InputState
+from distributed_smb.shared.messages.sync import WorldStateSnapshot
 
 
 @dataclass(slots=True)
@@ -58,36 +59,17 @@ class PredictionEngine:
         self.local_player_id = local_player_id
         self.buffer = InputHistoryBuffer(capacity=history_capacity)
 
-    def predict(self, sequence_number: int, input_state: InputState, dt: float) -> WorldState:
-        self.engine.tick(dt, {self.local_player_id: input_state})
-        self.buffer.push(sequence_number, input_state, self.engine.world_state)
-        return deepcopy(self.engine.world_state)
+    def predict(self, input_state: InputState) -> None:
+        next_seq = self.engine.world_state.sequence_number + 1
+        self.buffer.push(next_seq, input_state, self.engine.world_state)
 
-    def reconcile(self, authoritative_snapshot: WorldState, dt: float) -> bool:
-        matching_entry = self.buffer.find(authoritative_snapshot.sequence_number)
-        self.buffer.acknowledge(authoritative_snapshot.sequence_number)
-
+    def reconcile(self, authoritative_snapshot: WorldStateSnapshot) -> None:
+        world_state = authoritative_snapshot.world_state
+        self.buffer.acknowledge(world_state.sequence_number)
         pending_inputs = self.buffer.get_unacknowledged()
-
-        if matching_entry is None:
-            self.engine.world_state = deepcopy(authoritative_snapshot)
-            if pending_inputs:
-                self._replay_pending(pending_inputs, dt)
-                return True
-            return False
-
-        if self.should_rollback(matching_entry.predicted_state_snapshot, authoritative_snapshot):
-            self.engine.world_state = deepcopy(authoritative_snapshot)
-            if pending_inputs:
-                self._replay_pending(pending_inputs, dt)
-            return True
-
+        self.engine.world_state = deepcopy(world_state)
         if pending_inputs:
-            self.engine.world_state = deepcopy(authoritative_snapshot)
-            self._replay_pending(pending_inputs, dt)
-            return True
-
-        return False
+            self._replay_pending(pending_inputs)
 
     def should_rollback(self, predicted: WorldState, authoritative: WorldState) -> bool:
         predicted_player = predicted.get_player(self.local_player_id)
@@ -102,7 +84,7 @@ class PredictionEngine:
 
         return distance > DIVERGENCE_THRESHOLD
 
-    def _replay_pending(self, pending_inputs: list[InputHistoryEntry], dt: float) -> None:
+    def _replay_pending(self, pending_inputs: list[InputHistoryEntry]) -> None:
         for entry in pending_inputs:
-            self.engine.tick(dt, {self.local_player_id: entry.input_state})
+            self.engine.tick(TICK_INTERVAL, {self.local_player_id: entry.input_state})
             entry.predicted_state_snapshot = deepcopy(self.engine.world_state)

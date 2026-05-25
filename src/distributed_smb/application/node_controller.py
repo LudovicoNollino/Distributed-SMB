@@ -22,6 +22,7 @@ from distributed_smb.application.reconciliation import (
 )
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
+from distributed_smb.domain.prediction_engine import PredictionEngine
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.network.udp_handler import UdpHandler
 from distributed_smb.network.ws_handler import WsHandler
@@ -37,6 +38,7 @@ from distributed_smb.shared.config import (
     GAME_EVENT_WS_PORT,
     HOST_PLAYER_ID,
     HOST_UDP_PORT,
+    INPUT_HISTORY_SIZE,
     LOBBY_WS_PORT,
     TICK_INTERVAL,
 )
@@ -126,6 +128,12 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
             artificial_latency_ms=artificial_latency_ms,
         )
         self._bootstrap_world()
+        if role is PlayerRole.CLIENT and isinstance(self.prediction_engine, NoopPredictionEngine):
+            self.prediction_engine = PredictionEngine(
+                engine=self.engine,
+                local_player_id=self.local_player_id,
+                history_capacity=INPUT_HISTORY_SIZE,
+            )
         self.lifecycle.move_to_idle()
         self.is_bootstrapped = True
         LOGGER.info(

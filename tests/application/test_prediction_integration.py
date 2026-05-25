@@ -98,6 +98,22 @@ def test_custom_prediction_engine_is_not_overridden():
     assert nc.prediction_engine is spy
 
 
+def test_client_bootstrap_wires_real_prediction_engine():
+    """bootstrap(CLIENT) must replace NoopPredictionEngine with the real PredictionEngine."""
+    from distributed_smb.domain.prediction_engine import PredictionEngine
+
+    nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    assert isinstance(nc.prediction_engine, PredictionEngine)
+    assert nc.prediction_engine.engine is nc.engine
+    assert nc.prediction_engine.local_player_id == nc.local_player_id
+
+
+def test_host_bootstrap_keeps_noop_prediction_engine():
+    """bootstrap(HOST) must keep NoopPredictionEngine — host never predicts."""
+    nc = NodeController().bootstrap(role=PlayerRole.HOST)
+    assert isinstance(nc.prediction_engine, NoopPredictionEngine)
+
+
 # ---------------------------------------------------------------------------
 # Calling contract — predict()
 # ---------------------------------------------------------------------------
@@ -180,8 +196,8 @@ def test_reconcile_not_called_for_stale_snapshot():
 
 
 def test_noop_reconcile_applies_snapshot_directly():
-    """With NoopPredictionEngine, reconcile() must set engine.world_state to the snapshot."""
-    nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    """NoopPredictionEngine (HOST role): reconcile() sets world_state to the snapshot."""
+    nc = NodeController().bootstrap(role=PlayerRole.HOST)
     snapshot_world = nc.engine.world_state.__class__(sequence_number=42)
     snapshot = WorldStateSnapshot(sequence_number=99, world_state=snapshot_world)
 
@@ -192,7 +208,7 @@ def test_noop_reconcile_applies_snapshot_directly():
 
 def test_noop_predict_does_not_mutate_world_state():
     """predict() on the noop must be a pure no-op with no side effects."""
-    nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    nc = NodeController().bootstrap(role=PlayerRole.HOST)
     original_seq = nc.engine.world_state.sequence_number
 
     nc.prediction_engine.predict(InputState(right=True))

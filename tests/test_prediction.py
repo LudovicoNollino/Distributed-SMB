@@ -1,68 +1,109 @@
 from copy import deepcopy
 
+import pytest
+
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.prediction_engine import PredictionEngine
-from distributed_smb.shared.config import DIVERGENCE_THRESHOLD
+from distributed_smb.domain.world import WorldState
+from distributed_smb.shared.config import TICK_INTERVAL
 from distributed_smb.shared.input import InputState
+from distributed_smb.shared.messages.sync import WorldStateSnapshot
 
 
-def test_prediction_engine_rolls_back_on_divergence_above_threshold():
+def _make_snapshot(world_state: WorldState) -> WorldStateSnapshot:
+    return WorldStateSnapshot(
+        sequence_number=world_state.sequence_number,
+        world_state=world_state,
+    )
+
+
+def test_prediction_engine_predict_does_not_tick_engine():
+    """predict() must not advance the engine — the caller is responsible for ticking."""
     engine = GameEngine()
     engine.spawn_player("player1")
-    prediction_engine = PredictionEngine(engine=engine, local_player_id="player1")
+    pe = PredictionEngine(engine=engine, local_player_id="player1")
 
-    predicted_state = prediction_engine.predict(1, InputState(right=True), 1 / 60)
-    authoritative_snapshot = deepcopy(predicted_state)
-    authoritative_snapshot.get_player("player1").x -= DIVERGENCE_THRESHOLD + 1
-    authoritative_snapshot.sequence_number = 1
+    seq_before = engine.world_state.sequence_number
+    pe.predict(InputState(right=True))
 
-    rolled_back = prediction_engine.reconcile(authoritative_snapshot, 1 / 60)
-
-    assert rolled_back is True
-    assert prediction_engine.buffer.get_unacknowledged() == []
-    authoritative = authoritative_snapshot.get_player("player1").x
-    assert engine.world_state.get_player("player1").x == authoritative
+    assert engine.world_state.sequence_number == seq_before
 
 
-def test_prediction_engine_does_not_rollback_for_small_divergence():
+def test_prediction_engine_predict_records_input_in_buffer():
+    """predict() must push an entry into the buffer so reconcile can replay it."""
     engine = GameEngine()
     engine.spawn_player("player1")
-    prediction_engine = PredictionEngine(engine=engine, local_player_id="player1")
+    pe = PredictionEngine(engine=engine, local_player_id="player1")
 
-    predicted_state = prediction_engine.predict(1, InputState(right=True), 1 / 60)
-    authoritative_snapshot = deepcopy(predicted_state)
-    authoritative_snapshot.get_player("player1").x += DIVERGENCE_THRESHOLD / 2
-    authoritative_snapshot.sequence_number = 1
-
-    rolled_back = prediction_engine.reconcile(authoritative_snapshot, 1 / 60)
-
-    assert rolled_back is False
-    assert prediction_engine.buffer.get_unacknowledged() == []
-    assert engine.world_state.get_player("player1").x == predicted_state.get_player("player1").x
+    assert pe.buffer.get_unacknowledged() == []
+    pe.predict(InputState(right=True))
+    assert len(pe.buffer.get_unacknowledged()) == 1
 
 
-def test_prediction_engine_replays_unconfirmed_inputs_after_rollback():
+def test_prediction_engine_reconcile_applies_authoritative_state():
+    """reconcile() must set engine.world_state to the authoritative snapshot."""
     engine = GameEngine()
     engine.spawn_player("player1")
-    prediction_engine = PredictionEngine(engine=engine, local_player_id="player1")
+    pe = PredictionEngine(engine=engine, local_player_id="player1")
 
-    prediction_engine.predict(1, InputState(right=True), 1 / 60)
-    prediction_engine.predict(2, InputState(right=True), 1 / 60)
+    pe.predict(InputState(right=True))
+    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
 
+    authoritative = deepcopy(engine.world_state)
+    authoritative.get_player("player1").x = 999.0
+    snapshot = _make_snapshot(authoritative)
+
+    pe.reconcile(snapshot)
+
+    assert engine.world_state.get_player("player1").x == 999.0
+
+
+def test_prediction_engine_reconcile_replays_pending_inputs():
+    """After reconcile, unacknowledged inputs must be replayed on top of the authoritative state."""
+    engine = GameEngine()
+    engine.spawn_player("player1")
+    pe = PredictionEngine(engine=engine, local_player_id="player1")
+
+    # Two predict+tick cycles
+    pe.predict(InputState(right=True))
+    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
+    pe.predict(InputState(right=True))
+    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
+
+    # Server acknowledges tick 1 only (sequence_number=1)
     authoritative_engine = GameEngine()
     authoritative_engine.spawn_player("player1")
-    authoritative_snapshot = deepcopy(authoritative_engine.world_state)
-    authoritative_snapshot.sequence_number = 1
+    authoritative_engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
+    authoritative_snapshot = _make_snapshot(deepcopy(authoritative_engine.world_state))
 
-    rolled_back = prediction_engine.reconcile(authoritative_snapshot, 1 / 60)
+    pe.reconcile(authoritative_snapshot)
 
-    assert rolled_back is True
-    assert len(prediction_engine.buffer.get_unacknowledged()) == 1
-
+    # Input 2 must have been replayed: expected = authoritative + one more right tick
     expected_engine = GameEngine()
     expected_engine.spawn_player("player1")
-    expected_engine.world_state = deepcopy(authoritative_snapshot)
-    expected_engine.tick(1 / 60, {"player1": InputState(right=True)})
-    expected = expected_engine.world_state.get_player("player1").x
-    assert engine.world_state.get_player("player1").x == expected
-    assert engine.world_state.sequence_number == expected_engine.world_state.sequence_number
+    expected_engine.world_state = deepcopy(authoritative_engine.world_state)
+    expected_engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
+
+    expected_x = expected_engine.world_state.get_player("player1").x
+    assert engine.world_state.get_player("player1").x == pytest.approx(expected_x)
+
+
+def test_prediction_engine_acknowledge_clears_confirmed_inputs():
+    """reconcile() must remove acknowledged inputs from the buffer."""
+    engine = GameEngine()
+    engine.spawn_player("player1")
+    pe = PredictionEngine(engine=engine, local_player_id="player1")
+
+    pe.predict(InputState(right=True))
+    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
+    pe.predict(InputState(right=True))
+    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
+
+    assert len(pe.buffer.get_unacknowledged()) == 2
+
+    authoritative = deepcopy(engine.world_state)
+    authoritative.sequence_number = 1
+    pe.reconcile(_make_snapshot(authoritative))
+
+    # Only input 2 (seq=2) remains pending
+    assert len(pe.buffer.get_unacknowledged()) == 1
