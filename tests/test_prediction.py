@@ -2,8 +2,8 @@ from copy import deepcopy
 
 import pytest
 
+from distributed_smb.application.reconciliation import PredictionEngine
 from distributed_smb.domain.game_engine import GameEngine
-from distributed_smb.domain.prediction_engine import PredictionEngine
 from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.config import TICK_INTERVAL
 from distributed_smb.shared.input import InputState

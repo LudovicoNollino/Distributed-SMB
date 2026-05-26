@@ -17,12 +17,12 @@ from distributed_smb.application.lobby_coordinator import (
 from distributed_smb.application.reconciliation import (
     NoopPredictionEngine,
     NoopShadowCopy,
+    PredictionEngine,
     PredictionEngineProtocol,
     ShadowCopyProtocol,
 )
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
-from distributed_smb.domain.prediction_engine import PredictionEngine
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.network.udp_handler import UdpHandler
 from distributed_smb.network.ws_handler import WsHandler

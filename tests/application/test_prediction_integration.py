@@ -3,6 +3,7 @@
 from distributed_smb.application.node_controller import NodeController
 from distributed_smb.application.reconciliation import (
     NoopPredictionEngine,
+    PredictionEngine,
     PredictionEngineProtocol,
 )
 from distributed_smb.network.serializer import Serializer
@@ -100,8 +101,6 @@ def test_custom_prediction_engine_is_not_overridden():
 
 def test_client_bootstrap_wires_real_prediction_engine():
     """bootstrap(CLIENT) must replace NoopPredictionEngine with the real PredictionEngine."""
-    from distributed_smb.domain.prediction_engine import PredictionEngine
-
     nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
     assert isinstance(nc.prediction_engine, PredictionEngine)
     assert nc.prediction_engine.engine is nc.engine
