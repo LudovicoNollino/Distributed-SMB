@@ -4,6 +4,8 @@ import argparse
 import logging
 
 from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
+from distributed_smb.network.game_event_server import GameEventBroker
+from distributed_smb.network.lobby_service import LobbyService
 from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.presentation.lobby_screen import LobbyScreen
 from distributed_smb.shared.config import (
@@ -22,7 +24,10 @@ def build_controller(
     artificial_latency_ms: int = ARTIFICIAL_LATENCY_MS,
 ) -> NodeController:
     """Create and bootstrap the application's central controller."""
-    controller = NodeController().bootstrap(
+    controller = NodeController(
+        game_event_broker=GameEventBroker(),
+        lobby_service=LobbyService(),
+    ).bootstrap(
         role=role,
         packet_drop_rate=packet_drop_rate,
         artificial_latency_ms=artificial_latency_ms,
