@@ -119,6 +119,19 @@ def reset() -> None:
         _disconnect_queue.get_nowait()
 
 
+class GameEventBroker:
+    """Concrete broker that delegates to the module-level game event server functions."""
+
+    def send(self, payload: bytes) -> None:
+        send_game_event(payload)
+
+    def get_disconnected_player(self) -> str | None:
+        return get_disconnected_player()
+
+    def launch(self, host: str = "0.0.0.0", port: int = GAME_EVENT_WS_PORT) -> None:
+        launch_game_event_server(host=host, port=port)
+
+
 def launch_game_event_server(
     host: str = "0.0.0.0", port: int = GAME_EVENT_WS_PORT
 ) -> threading.Thread:

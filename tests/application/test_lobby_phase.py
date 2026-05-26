@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from distributed_smb.application.node_controller import NodeController
+from distributed_smb.application.protocols import NoopGameEventBroker, NoopLobbyService
 from distributed_smb.network.lobby_service import launch_lobby_server, lobby_manager
 from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.shared.config import LOBBY_STARTUP_WAIT
@@ -30,13 +31,19 @@ def reset_lobby():
 
 
 def _make_host() -> NodeController:
-    ctrl = NodeController().bootstrap(role=PlayerRole.HOST)
+    ctrl = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.HOST)
     ctrl.ws_handler = WsHandler(host="127.0.0.1", port=TEST_PORT)
     return ctrl
 
 
 def _make_client() -> NodeController:
-    ctrl = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    ctrl = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.CLIENT)
     ctrl.ws_handler = WsHandler(host="127.0.0.1", port=TEST_PORT)
     return ctrl
 
@@ -49,10 +56,8 @@ def _make_client() -> NodeController:
 def test_host_lobby_phase_single_player():
     host = _make_host()
 
-    with patch("distributed_smb.application.lobby_coordinator.launch_lobby_server"):
-        with patch("distributed_smb.application.lobby_coordinator.launch_game_event_server"):
-            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                roster = host.lobby_phase(min_players=1)
+    with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+        roster = host.lobby_phase(min_players=1)
 
     assert host.session_id != ""
     assert len(roster.players) == 1
@@ -73,12 +78,8 @@ def test_host_and_client_lobby_phase():
 
     def run_host():
         try:
-            with patch("distributed_smb.application.lobby_coordinator.launch_lobby_server"):
-                with patch(
-                    "distributed_smb.application.lobby_coordinator.launch_game_event_server"
-                ):
-                    with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                        host.lobby_phase(min_players=2)
+            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+                host.lobby_phase(min_players=2)
         except Exception as exc:
             errors.append(exc)
 
@@ -113,10 +114,8 @@ def test_host_and_client_lobby_phase():
 def test_host_solo_world_has_only_one_player():
     """With min_players=1 the world must contain only the host's character."""
     host = _make_host()
-    with patch("distributed_smb.application.lobby_coordinator.launch_lobby_server"):
-        with patch("distributed_smb.application.lobby_coordinator.launch_game_event_server"):
-            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                host.lobby_phase(min_players=1)
+    with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+        host.lobby_phase(min_players=1)
 
     assert set(host.engine.world_state.characters) == {"player1"}
 
@@ -124,13 +123,11 @@ def test_host_solo_world_has_only_one_player():
 def test_host_can_manually_start_before_min_players():
     host = _make_host()
 
-    with patch("distributed_smb.application.lobby_coordinator.launch_lobby_server"):
-        with patch("distributed_smb.application.lobby_coordinator.launch_game_event_server"):
-            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                roster = host.lobby_phase(
-                    min_players=2,
-                    start_requested=lambda: True,
-                )
+    with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+        roster = host.lobby_phase(
+            min_players=2,
+            start_requested=lambda: True,
+        )
 
     assert len(roster.players) == 1
     assert roster.players[0].is_host is True

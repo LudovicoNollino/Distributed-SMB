@@ -5,8 +5,6 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from distributed_smb.network.game_event_server import launch_game_event_server
-from distributed_smb.network.lobby_service import launch_lobby_server
 from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.shared.config import (
     GAME_EVENT_WS_PATH,
@@ -80,7 +78,7 @@ class LobbyMixin:
         start_requested: StartRequestedCallback | None = None,
     ) -> None:
         self._notify_lobby_update("Creating lobby server", on_update)
-        launch_lobby_server(port=LOBBY_WS_PORT)
+        self.lobby_service.launch(port=LOBBY_WS_PORT)
         time.sleep(LOBBY_STARTUP_WAIT)
 
         self._notify_lobby_update("Connecting to lobby", on_update)
@@ -113,7 +111,7 @@ class LobbyMixin:
                 break
             time.sleep(0.05)
 
-        launch_game_event_server()
+        self.game_event_broker.launch()
         time.sleep(LOBBY_STARTUP_WAIT)
         self._notify_lobby_update("Broadcasting game start", on_update)
         self.ws_handler.send(GameStart(session_id=self.session_id))

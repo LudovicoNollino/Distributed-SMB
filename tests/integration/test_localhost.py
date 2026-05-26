@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from distributed_smb.application.node_controller import NodeController
+from distributed_smb.application.protocols import NoopGameEventBroker, NoopLobbyService
 from distributed_smb.network.lobby_service import launch_lobby_server, lobby_manager
 from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.shared.config import LOBBY_STARTUP_WAIT
@@ -46,11 +47,8 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
 
     def run_host():
         try:
-            lobby = "distributed_smb.application.lobby_coordinator"
-            with patch(f"{lobby}.launch_lobby_server"):
-                with patch(f"{lobby}.launch_game_event_server"):
-                    with patch(f"{lobby}.time.sleep"):
-                        host.lobby_phase(min_players=2)
+            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+                host.lobby_phase(min_players=2)
         except Exception as exc:
             errors.append(exc)
 
@@ -80,10 +78,16 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
 
 def test_lobby_produces_consistent_session():
     """Both nodes finish lobby with the same session_id and a 2-player roster."""
-    host = NodeController().bootstrap(role=PlayerRole.HOST)
+    host = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.HOST)
     host.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
 
-    client = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    client = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.CLIENT)
     client.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
 
     errors = _run_lobby(host, client)
@@ -97,10 +101,16 @@ def test_lobby_produces_consistent_session():
 
 def test_world_contains_only_roster_players_after_lobby():
     """After lobby_phase the world has exactly the two roster players — no extras."""
-    host = NodeController().bootstrap(role=PlayerRole.HOST)
+    host = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.HOST)
     host.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
 
-    client = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    client = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.CLIENT)
     client.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
 
     _run_lobby(host, client)
@@ -111,10 +121,16 @@ def test_world_contains_only_roster_players_after_lobby():
 
 def test_udp_gameplay_frames_are_exchanged():
     """After lobby, host and client exchange real UDP packets over localhost."""
-    host = NodeController().bootstrap(role=PlayerRole.HOST)
+    host = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.HOST)
     host.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
 
-    client = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    client = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.CLIENT)
     client.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
 
     errors = _run_lobby(host, client)
@@ -141,10 +157,16 @@ def test_udp_gameplay_frames_are_exchanged():
 
 def test_host_applies_client_input_to_world():
     """The host's authoritative world state moves player2 when client sends right input."""
-    host = NodeController().bootstrap(role=PlayerRole.HOST)
+    host = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.HOST)
     host.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
 
-    client = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    client = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.CLIENT)
     client.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
 
     errors = _run_lobby(host, client)

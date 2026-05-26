@@ -4,7 +4,6 @@ import json
 import logging
 import time
 
-from distributed_smb.network.game_event_server import get_disconnected_player, send_game_event
 from distributed_smb.shared.config import UDP_INPUT_TIMEOUT
 from distributed_smb.shared.mappers.gameplay_mapper import event_to_message
 from distributed_smb.shared.messages.gameplay import (
@@ -25,7 +24,7 @@ class GameEventMixin:
             LOGGER.warning("No message mapping for event: %s", type(event).__name__)
             return
         payload = json.dumps(self.serializer.encode_ws_message(msg)).encode()
-        send_game_event(payload)
+        self.game_event_broker.send(payload)
         LOGGER.info("game event sent: %s", msg)
 
     def _evict_player(self, pid: str) -> None:
@@ -40,13 +39,13 @@ class GameEventMixin:
         """Broadcast a PlayerLeft message to all remaining clients."""
         msg = PlayerLeft(player_id=pid)
         payload = json.dumps(self.serializer.encode_ws_message(msg)).encode()
-        send_game_event(payload)
+        self.game_event_broker.send(payload)
         LOGGER.info("PlayerLeft broadcast: %s", pid)
 
     def _check_player_disconnections(self) -> None:
         """Detect players that dropped their connection and evict them."""
         while True:
-            pid = get_disconnected_player()
+            pid = self.game_event_broker.get_disconnected_player()
             if pid is None:
                 break
             LOGGER.info("Player left the game (WebSocket): %s", pid)

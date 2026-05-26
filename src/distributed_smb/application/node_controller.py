@@ -14,6 +14,10 @@ from distributed_smb.application.lobby_coordinator import (
     LobbyUpdateCallback,
     StartRequestedCallback,
 )
+from distributed_smb.application.protocols import (
+    GameEventBrokerProtocol,
+    LobbyServiceProtocol,
+)
 from distributed_smb.application.reconciliation import (
     NoopPredictionEngine,
     NoopShadowCopy,
@@ -23,6 +27,8 @@ from distributed_smb.application.reconciliation import (
 )
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
+from distributed_smb.network.game_event_server import GameEventBroker
+from distributed_smb.network.lobby_service import LobbyService
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.network.udp_handler import UdpHandler
 from distributed_smb.network.ws_handler import WsHandler
@@ -98,6 +104,8 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     prediction_engine: PredictionEngineProtocol = field(default_factory=NoopPredictionEngine)
     shadow_copies: dict[str, ShadowCopyProtocol] = field(default_factory=dict)
     shadow_copy_factory: type = field(default=NoopShadowCopy)
+    game_event_broker: GameEventBrokerProtocol = field(default_factory=GameEventBroker)
+    lobby_service: LobbyServiceProtocol = field(default_factory=LobbyService)
 
     def __post_init__(self) -> None:
         if isinstance(self.prediction_engine, NoopPredictionEngine):

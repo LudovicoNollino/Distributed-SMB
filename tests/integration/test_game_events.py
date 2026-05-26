@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from distributed_smb.application.node_controller import NodeController
+from distributed_smb.application.protocols import NoopGameEventBroker, NoopLobbyService
 from distributed_smb.domain.entity import ExclusivePowerUp
 from distributed_smb.network.game_event_server import (
     launch_game_event_server,
@@ -84,11 +85,8 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
 
     def run_host():
         try:
-            lobby = "distributed_smb.application.lobby_coordinator"
-            with patch(f"{lobby}.launch_lobby_server"):
-                with patch(f"{lobby}.launch_game_event_server"):
-                    with patch(f"{lobby}.time.sleep"):
-                        host.lobby_phase(min_players=2)
+            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+                host.lobby_phase(min_players=2)
         except Exception as exc:
             errors.append(exc)
 
@@ -112,7 +110,10 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
 
 def _make_post_lobby_host() -> NodeController:
     """Build a host NodeController in post-lobby state without running lobby."""
-    nc = NodeController().bootstrap(role=PlayerRole.HOST)
+    nc = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.HOST)
     nc.roster.add_player(
         RosterEntry(
             player_id="player1", host="127.0.0.1", udp_port=50000, join_index=0, is_host=True
@@ -235,9 +236,7 @@ def test_host_evicts_player_on_udp_timeout():
     assert "player2" in host.engine.world_state.characters
 
     host.last_input_time["player2"] = time.time() - UDP_INPUT_TIMEOUT - 1.0
-
-    with patch("distributed_smb.application.game_event_dispatcher.send_game_event"):
-        host._check_player_disconnections()
+    host._check_player_disconnections()
 
     assert "player2" not in host.engine.world_state.characters
     assert host.roster.get_player("player2") is None
@@ -257,18 +256,18 @@ def test_evict_player_clears_all_associated_state():
 
 
 def test_host_broadcasts_player_left_on_udp_timeout():
-    """Host calls send_game_event with a PlayerLeft message when evicting via UDP timeout."""
+    """Host calls game_event_broker.send() with PlayerLeft when evicting via UDP timeout."""
     host = _make_post_lobby_host()
     host.last_input_time["player2"] = time.time() - UDP_INPUT_TIMEOUT - 1.0
 
     sent_payloads: list[bytes] = []
 
-    def capture(payload: bytes) -> None:
-        sent_payloads.append(payload)
+    class _SpyBroker(NoopGameEventBroker):
+        def send(self, payload: bytes) -> None:
+            sent_payloads.append(payload)
 
-    dispatcher = "distributed_smb.application.game_event_dispatcher"
-    with patch(f"{dispatcher}.send_game_event", side_effect=capture):
-        host._check_player_disconnections()
+    host.game_event_broker = _SpyBroker()
+    host._check_player_disconnections()
 
     assert len(sent_payloads) == 1
     data = json.loads(sent_payloads[0])
