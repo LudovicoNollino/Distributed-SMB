@@ -33,6 +33,10 @@ MIN_PLAYERS_TO_START = 2
 TICK_RATE = 60
 TICK_INTERVAL = 1.0 / TICK_RATE
 
+# Remote snapshot smoothing and loss-tolerance timings.
+SNAPSHOT_TIMEOUT = 0.15
+MAX_EXTRAPOLATION_TIME = 0.35
+
 # Base resolution used as logical reference.
 BASE_WINDOW_WIDTH = 640
 BASE_WINDOW_HEIGHT = 480
