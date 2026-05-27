@@ -5,11 +5,13 @@ import json
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
+from distributed_smb.domain.shadow_copy import ShadowCopy
+from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.network.game_event_server import (
     get_disconnected_player,
     launch_game_event_server,
@@ -107,6 +109,8 @@ class NodeController:
     sent_snapshots: int = 0
     received_snapshots: int = 0
     last_input_time: dict[str, float] = field(default_factory=dict)
+    remote_shadow_copies: dict[str, ShadowCopy] = field(default_factory=dict)
+    time_provider: Callable[[], float] = field(default_factory=lambda: time.monotonic)
 
     def bootstrap(
         self,
@@ -294,6 +298,7 @@ class NodeController:
         are sent to the peer's real IP even on a LAN (not just 127.0.0.1).
         """
         self.engine.world_state.characters.clear()
+        self.remote_shadow_copies.clear()
         for entry in self.roster.get_all_players():
             x, y = self._spawn_position_for(entry.player_id)
             self.engine.spawn_player(entry.player_id, x=x, y=y, join_index=entry.join_index)
@@ -346,6 +351,35 @@ class NodeController:
         if self.engine.world_state.get_player(self.remote_player_id) is None:
             x, y = self._spawn_position_for(self.remote_player_id)
             self.engine.spawn_player(self.remote_player_id, x=x, y=y)
+
+    def _build_visual_world_state(
+        self,
+        *,
+        local_visual_state: CharacterState | None = None,
+    ) -> WorldState:
+        """Build a render-only snapshot separated from the raw network state."""
+        now = self.time_provider()
+        visual_characters = {}
+
+        for player_id, character in self.engine.world_state.characters.items():
+            if player_id == self.local_player_id and local_visual_state is not None:
+                visual_characters[player_id] = replace(local_visual_state)
+                continue
+
+            shadow_copy = self.remote_shadow_copies.get(player_id)
+            if shadow_copy is not None:
+                visual_state = shadow_copy.get_visual_state(now)
+                if visual_state is not None:
+                    visual_characters[player_id] = visual_state
+                    continue
+
+            visual_characters[player_id] = replace(character)
+
+        return type(self.engine.world_state)(
+            sequence_number=self.engine.world_state.sequence_number,
+            characters=visual_characters,
+            environment=self.engine.world_state.environment,
+        )
 
     def _spawn_position_for(self, player_id: str) -> tuple[int, int]:
         """Return a stable spawn point for each player across every process."""
@@ -427,6 +461,15 @@ class NodeController:
                 continue
 
             self.last_snapshot_sequence = decoded.sequence_number
+            received_at = self.time_provider()
+            for player_id, character in decoded.world_state.characters.items():
+                if player_id == self.local_player_id:
+                    continue
+                self.remote_shadow_copies.setdefault(player_id, ShadowCopy()).update(
+                    character,
+                    sequence_number=decoded.sequence_number,
+                    received_at=received_at,
+                )
             self.engine.world_state = decoded.world_state
             self.received_snapshots += 1
 
@@ -479,6 +522,7 @@ class NodeController:
         self.cached_remote_inputs.pop(pid, None)
         self.last_remote_input_sequence.pop(pid, None)
         self.last_input_time.pop(pid, None)
+        self.remote_shadow_copies.pop(pid, None)
 
     def _send_player_left(self, pid: str) -> None:
         """Broadcast a PlayerLeft message to all remaining clients."""
@@ -531,7 +575,7 @@ class NodeController:
                 LOGGER.info("Player left (received): %s", msg.player_id)
                 self._evict_player(msg.player_id)
 
-    def process_frame(self, dt: float, local_input: InputState) -> object:
+    def process_frame(self, dt: float, local_input: InputState) -> WorldState:
         """Advance one frame according to the current runtime role."""
         if not self.lifecycle.is_started:
             self.lifecycle.move_to_game()
@@ -550,7 +594,8 @@ class NodeController:
 
         self._send_input_packet(local_input)
         self.engine.tick(dt, {self.local_player_id: local_input})
+        local_visual_state = replace(self.engine.world_state.characters[self.local_player_id])
         self.engine.events.clear()
         self._drain_snapshot_packets()
         self._drain_game_events()
-        return self.engine.world_state
+        return self._build_visual_world_state(local_visual_state=local_visual_state)

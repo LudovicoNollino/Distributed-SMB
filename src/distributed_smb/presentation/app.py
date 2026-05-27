@@ -75,11 +75,11 @@ class GameApp:
             for platform in self.engine.platforms
         ]
 
-    def _update_window_caption(self) -> None:
+    def _update_window_caption(self, world_state: WorldState) -> None:
         """Expose a little runtime context while the app loop is minimal."""
-        character = self.get_local_player()
-        player1 = self.engine.world_state.get_player("player1")
-        player2 = self.engine.world_state.get_player("player2")
+        character = self.get_local_player(world_state)
+        player1 = world_state.get_player("player1")
+        player2 = world_state.get_player("player2")
         player1_coords = (
             f"p1=({int(player1.x)},{int(player1.y)})" if player1 is not None else "p1=(missing)"
         )
@@ -91,7 +91,7 @@ class GameApp:
             f"| local=({int(character.x)},{int(character.y)}) "
             f"| {player1_coords} "
             f"| {player2_coords} "
-            f"seq={self.engine.world_state.sequence_number}"
+            f"seq={world_state.sequence_number}"
         )
 
     def run(self) -> None:
@@ -101,6 +101,7 @@ class GameApp:
         while running:
             dt = min(self.clock.tick(self.fps) / 1000, self.max_frame_dt)
             running = not self._should_quit()
+            render_world_state = self.engine.world_state
             if self.frame_handler is None:
                 inputs = self._read_inputs()
                 self.engine.tick(dt, inputs)
@@ -108,17 +109,18 @@ class GameApp:
                 self._clamp_player_to_window(self.player2_id)
             else:
                 local_input = self.input_handler.read_input()
-                self.frame_handler(dt, local_input)
+                render_world_state = self.frame_handler(dt, local_input)
                 self._clamp_player_to_window(self.local_player_id)
                 self._clamp_player_to_window(self.player2_id)
-            self._update_window_caption()
+            self._update_window_caption(render_world_state)
             self.renderer.render(
                 screen=self.screen,
-                world_state=self.engine.world_state,
+                world_state=render_world_state,
                 platforms=self._build_platform_rects(),
             )
 
         pygame.quit()
 
-    def get_local_player(self):
-        return self.engine.world_state.get_player(self.local_player_id)
+    def get_local_player(self, world_state: WorldState | None = None):
+        state = self.engine.world_state if world_state is None else world_state
+        return state.get_player(self.local_player_id)
