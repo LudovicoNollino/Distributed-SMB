@@ -262,3 +262,45 @@ def test_client_snapshot_updates_environment_state():
     assert controller.engine.world_state.environment.destructible_blocks[0].destroyed is True
     assert controller.engine.world_state.environment.power_ups["pu-a"].owner == "player1"
     assert controller.engine.world_state.environment.cooperative_gates["gate-a"].state == "open"
+
+
+def test_client_process_frame_returns_visual_state_with_predicted_local_player():
+    controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    serializer = Serializer()
+    authoritative_world = WorldState(
+        sequence_number=20,
+        characters={
+            "player1": CharacterState(player_id="player1", x=100.0, y=100.0),
+            "player2": CharacterState(player_id="player2", x=240.0, y=100.0),
+        },
+    )
+    payload = serializer.encode_message(
+        WorldStateSnapshot(sequence_number=20, world_state=authoritative_world)
+    )
+
+    class FakeUdpHandler:
+        def __init__(self, packet):
+            self.packet = packet
+
+        def open_socket(self):
+            return None
+
+        def send_packet_nowait(self, payload, remote_host, remote_port):
+            return None
+
+        def receive_packet_nowait(self):
+            if self.packet is None:
+                return None
+            packet = self.packet
+            self.packet = None
+            return packet, ("127.0.0.1", 50010)
+
+    controller.udp_handler = FakeUdpHandler(payload)
+    controller.time_provider = lambda: 10.0
+
+    visual_world = controller.process_frame(TICK_INTERVAL, InputState(right=True))
+
+    assert visual_world.characters["player2"].x > authoritative_world.characters["player2"].x
+    assert controller.engine.world_state.characters["player2"].x == authoritative_world.characters[
+        "player2"
+    ].x
