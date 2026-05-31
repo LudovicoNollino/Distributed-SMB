@@ -5,7 +5,6 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.shared.config import (
     GAME_EVENT_WS_PATH,
     GAME_EVENT_WS_PORT,
@@ -186,6 +185,4 @@ class LobbyMixin:
             self.remote_port = remote.udp_port
             if self.role is PlayerRole.CLIENT:
                 path = f"{GAME_EVENT_WS_PATH}?player_id={self.local_player_id}"
-                self.game_event_handler = WsHandler(
-                    host=remote.host, port=GAME_EVENT_WS_PORT, path=path
-                )
+                self._make_ws_client(remote.host, GAME_EVENT_WS_PORT, path)

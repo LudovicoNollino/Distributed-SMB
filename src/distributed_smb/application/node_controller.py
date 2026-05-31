@@ -111,6 +111,10 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
         if isinstance(self.prediction_engine, NoopPredictionEngine):
             self.prediction_engine._engine = self.engine
 
+    def _make_ws_client(self, host: str, port: int, path: str) -> None:
+        """Create a WebSocket client handler and assign it as the game event receiver."""
+        self.game_event_handler = WsHandler(host=host, port=port, path=path)
+
     def _init_shadow_copies(self) -> None:
         """Initialise one ShadowCopy per remote player (CLIENT only, called after lobby)."""
         if self.role is not PlayerRole.CLIENT:

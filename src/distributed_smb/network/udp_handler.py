@@ -1,6 +1,5 @@
 """UDP transport helpers for the M2 loopback milestone."""
 
-import asyncio
 import heapq
 import random
 import socket
@@ -57,41 +56,6 @@ class UdpHandler:
             _, _, payload, remote_host, remote_port = heapq.heappop(self._outgoing_queue)
             assert self._socket is not None
             self._socket.sendto(payload, (remote_host, remote_port))
-
-    async def send_packet(self, payload: bytes, remote_host: str, remote_port: int) -> None:
-        """Send one UDP packet asynchronously."""
-        self.open_socket()
-        if self._should_drop_packet():
-            return
-        assert self._socket is not None
-        loop = asyncio.get_running_loop()
-        await loop.sock_sendto(self._socket, payload, (remote_host, remote_port))
-
-    async def receive_packet(
-        self,
-        *,
-        timeout: float | None = None,
-    ) -> tuple[bytes, tuple[str, int]] | None:
-        """Receive one UDP packet asynchronously."""
-        self.open_socket()
-        assert self._socket is not None
-        loop = asyncio.get_running_loop()
-        try:
-            if timeout is None:
-                packet = await loop.sock_recvfrom(self._socket, self.max_packet_size)
-            else:
-                packet = await asyncio.wait_for(
-                    loop.sock_recvfrom(self._socket, self.max_packet_size),
-                    timeout=timeout,
-                )
-        except TimeoutError:
-            return None
-        except ConnectionResetError:
-            # On Windows, sending UDP packets to a peer that is not listening can
-            # surface here as a connection reset on the next recv call.
-            return None
-
-        return packet
 
     def send_packet_nowait(self, payload: bytes, remote_host: str, remote_port: int) -> None:
         """Send one UDP packet from the game loop thread.

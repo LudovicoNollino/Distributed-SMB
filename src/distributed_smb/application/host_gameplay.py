@@ -33,22 +33,24 @@ class HostGameplayMixin:
 
     def _build_host_inputs(self, local_input: InputState) -> dict[str, InputState]:
         """Combine local and remote input streams into one authoritative map."""
-        return {
-            self.local_player_id: local_input,
-            self.remote_player_id: self.cached_remote_inputs.get(
-                self.remote_player_id,
-                InputState(),
-            ),
-        }
+        inputs = {self.local_player_id: local_input}
+        for entry in self.roster.get_all_players():
+            if entry.player_id != self.local_player_id:
+                inputs[entry.player_id] = self.cached_remote_inputs.get(
+                    entry.player_id, InputState()
+                )
+        return inputs
 
     def _send_world_state_snapshot(self) -> None:
-        """Broadcast the authoritative world state to the remote client."""
+        """Broadcast the authoritative world state to all remote peers."""
         snapshot = WorldStateSnapshot(
             sequence_number=self.engine.world_state.sequence_number,
             world_state=self.engine.world_state,
         )
         payload = self.serializer.encode_message(snapshot)
-        self.udp_handler.send_packet_nowait(payload, self.remote_host, self.remote_port)
+        for entry in self.roster.get_all_players():
+            if entry.player_id != self.local_player_id:
+                self.udp_handler.send_packet_nowait(payload, entry.host, entry.udp_port)
         self.sent_snapshots += 1
 
     def _process_host_frame(self, dt: float, local_input: InputState) -> object:

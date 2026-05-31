@@ -128,9 +128,7 @@ class GameEngine:
             apply_physics(player, dt)
 
         self.handle_collisions()
-        self.handle_block_collisions()
-        self.handle_powerup_collisions()
-        self.handle_gate_collisions()
+        self.handle_environment_collisions()
         self.world_state.sequence_number += 1
 
     def handle_collisions(self) -> None:
@@ -209,9 +207,9 @@ class GameEngine:
         )
 
 
+@dataclass
 class Platform:
-    def __init__(self, x: int, y: int, width: int, height: int) -> None:
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
+    x: int
+    y: int
+    width: int
+    height: int
