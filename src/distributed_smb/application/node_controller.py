@@ -1,5 +1,6 @@
 """Orchestrates presentation, domain, and network components."""
 
+from copy import deepcopy
 import importlib
 import json
 import logging
@@ -378,7 +379,7 @@ class NodeController:
         return type(self.engine.world_state)(
             sequence_number=self.engine.world_state.sequence_number,
             characters=visual_characters,
-            environment=self.engine.world_state.environment,
+            environment=deepcopy(self.engine.world_state.environment),
         )
 
     def _spawn_position_for(self, player_id: str) -> tuple[int, int]:

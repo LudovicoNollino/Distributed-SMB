@@ -304,3 +304,26 @@ def test_client_process_frame_returns_visual_state_with_predicted_local_player()
     assert controller.engine.world_state.characters["player2"].x == authoritative_world.characters[
         "player2"
     ].x
+
+
+def test_visual_world_state_clones_environment_from_authoritative_state():
+    controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    controller.engine.world_state.add_block(DestructibleBlock(x=12, y=20, destroyed=False))
+    controller.engine.world_state.add_power_up(
+        ExclusivePowerUp(x=40, y=20, powerup_id="pu-a", collected=False)
+    )
+    controller.engine.world_state.add_gate(
+        CooperativeGate(x=72, y=20, gate_id="gate-a", state="closed")
+    )
+
+    visual_world = controller._build_visual_world_state()
+
+    assert visual_world.environment is not controller.engine.world_state.environment
+
+    visual_world.environment.destructible_blocks[0].destroyed = True
+    visual_world.environment.power_ups["pu-a"].collected = True
+    visual_world.environment.cooperative_gates["gate-a"].state = "open"
+
+    assert controller.engine.world_state.environment.destructible_blocks[0].destroyed is False
+    assert controller.engine.world_state.environment.power_ups["pu-a"].collected is False
+    assert controller.engine.world_state.environment.cooperative_gates["gate-a"].state == "closed"
