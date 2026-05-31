@@ -324,13 +324,13 @@ def test_client_applies_powerup_collected_event():
     client = _make_post_lobby_client()
     client.game_event_handler = _ge_handler(client.local_player_id)
 
-    pu = client.engine.world_state.get_power_up("pu-test")
+    pu = next(iter(client.engine.world_state.environment.power_ups.values()), None)
     assert pu is not None, "Test power-up not found in world state"
     assert not pu.collected
 
     payload = json.dumps(
         _serializer.encode_ws_message(
-            PowerUpCollectedMessage(powerup_id="pu-test", player_id="player1")
+            PowerUpCollectedMessage(powerup_id=pu.powerup_id, player_id="player1")
         )
     ).encode()
     send_game_event(payload)
