@@ -172,6 +172,13 @@ async def lobby_endpoint(ws: WebSocket) -> None:
             lobby_manager.remove_connection(session_id, ws)
 
 
+class LobbyService:
+    """Concrete service that delegates to the module-level lobby server function."""
+
+    def launch(self, host: str = "0.0.0.0", port: int = LOBBY_WS_PORT) -> None:
+        launch_lobby_server(host=host, port=port)
+
+
 def launch_lobby_server(host: str = "0.0.0.0", port: int = LOBBY_WS_PORT) -> threading.Thread:
     """Start uvicorn in a background daemon thread and return it."""
 

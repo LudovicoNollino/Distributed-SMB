@@ -32,6 +32,7 @@ MIN_PLAYERS_TO_START = 2
 
 TICK_RATE = 60
 TICK_INTERVAL = 1.0 / TICK_RATE
+DIVERGENCE_THRESHOLD = 5.0
 
 # Remote snapshot smoothing and loss-tolerance timings.
 SNAPSHOT_TIMEOUT = 0.15
@@ -52,3 +53,37 @@ PLAYER_WIDTH = int(50 * WORLD_SCALE)
 PLAYER_HEIGHT = int(50 * WORLD_SCALE)
 
 MAX_PLAYERS = 4
+
+# ---------------------------------------------------------------------------
+# M5 — client-side prediction and reconciliation
+# ---------------------------------------------------------------------------
+#
+# LAN tuning guide (one-way latency measured with ping):
+#
+#   Condition          RTT        DIVERGENCE_THRESHOLD   ARTIFICIAL_LATENCY_MS
+#   -----------------------------------------------------------------------
+#   Stable LAN         1–5 ms     10.0 px                0   (disabled)
+#   Average LAN        5–20 ms    20.0 px  ← default      0   (disabled)
+#   Noisy LAN         20–50 ms    35.0 px                0   (disabled)
+#   Simulated lag     any         20.0 px                50–200 ms (testing only)
+#
+# DIVERGENCE_THRESHOLD: positional error (px) above which the client rolls
+# back to the authoritative state and replays buffered inputs. Lower values
+# give a more authoritative feel but trigger more rollbacks on a noisy link;
+# higher values feel smoother but tolerate more visual desync.
+DIVERGENCE_THRESHOLD: float = 20.0
+
+# INPUT_HISTORY_SIZE: number of frames kept in the circular input buffer for
+# post-rollback replay. At 60 fps this covers 1 second of history, which is
+# more than enough for any realistic LAN round-trip time.
+INPUT_HISTORY_SIZE: int = 60
+
+# MAX_ROLLBACK_FRAMES: hard cap on how many frames can be replayed in a single
+# reconciliation step. Prevents unbounded CPU spikes if the host goes silent
+# for a long time and then sends a very old authoritative snapshot.
+MAX_ROLLBACK_FRAMES: int = 30
+
+# ARTIFICIAL_LATENCY_MS: one-way delay injected by UdpHandler on outgoing
+# packets. Use only for local testing of reconciliation behaviour; must be
+# 0 in production.
+ARTIFICIAL_LATENCY_MS: int = 0

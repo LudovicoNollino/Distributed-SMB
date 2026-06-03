@@ -6,7 +6,7 @@ import queue
 import threading
 
 import uvicorn
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, WebSocket
 
 from distributed_smb.shared.config import (
     GAME_EVENT_HEARTBEAT_INTERVAL,
@@ -71,14 +71,6 @@ async def _broadcast(payload: bytes) -> None:
             event.set()
 
 
-@app.post("/test-event")
-async def test_event(request: Request) -> dict:
-    """TEST ONLY — broadcast a raw JSON payload to all connected clients."""
-    body = await request.body()
-    await _broadcast(body)
-    return {"connections": len(_connections)}
-
-
 async def _heartbeat_loop() -> None:
     """Periodically ping all connections to detect stale WebSockets."""
     while True:
@@ -117,6 +109,19 @@ def reset() -> None:
     _ws_to_event.clear()
     while not _disconnect_queue.empty():
         _disconnect_queue.get_nowait()
+
+
+class GameEventBroker:
+    """Concrete broker that delegates to the module-level game event server functions."""
+
+    def send(self, payload: bytes) -> None:
+        send_game_event(payload)
+
+    def get_disconnected_player(self) -> str | None:
+        return get_disconnected_player()
+
+    def launch(self, host: str = "0.0.0.0", port: int = GAME_EVENT_WS_PORT) -> None:
+        launch_game_event_server(host=host, port=port)
 
 
 def launch_game_event_server(

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from distributed_smb.application.node_controller import NodeController
+from distributed_smb.application.protocols import NoopGameEventBroker, NoopLobbyService
 from distributed_smb.network.game_event_server import (
     launch_game_event_server,
     send_game_event,
@@ -39,11 +40,6 @@ FRAME_DT = 1 / 60
 _serializer = Serializer()
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="module", autouse=True)
 def start_servers():
     lobby_manager.reset()
@@ -59,11 +55,6 @@ def reset_state():
     yield
     lobby_manager.reset()
     reset_game_event_server()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _poll_until(handler: WsHandler, expected_type: type, timeout: float = 2.0):
@@ -83,10 +74,8 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
 
     def run_host():
         try:
-            with patch("distributed_smb.application.node_controller.launch_lobby_server"):
-                with patch("distributed_smb.application.node_controller.launch_game_event_server"):
-                    with patch("distributed_smb.application.node_controller.time.sleep"):
-                        host.lobby_phase(min_players=2)
+            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+                host.lobby_phase(min_players=2)
         except Exception as exc:
             errors.append(exc)
 
@@ -110,7 +99,10 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
 
 def _make_post_lobby_host() -> NodeController:
     """Build a host NodeController in post-lobby state without running lobby."""
-    nc = NodeController().bootstrap(role=PlayerRole.HOST)
+    nc = NodeController(
+        game_event_broker=NoopGameEventBroker(),
+        lobby_service=NoopLobbyService(),
+    ).bootstrap(role=PlayerRole.HOST)
     nc.roster.add_player(
         RosterEntry(
             player_id="player1", host="127.0.0.1", udp_port=50000, join_index=0, is_host=True
@@ -146,11 +138,6 @@ def _ge_handler(player_id: str) -> WsHandler:
     handler.connect()
     time.sleep(0.1)
     return handler
-
-
-# ---------------------------------------------------------------------------
-# Tests — game event broadcast
-# ---------------------------------------------------------------------------
 
 
 def test_block_destroyed_event_reaches_client():
@@ -222,20 +209,13 @@ def test_event_reaches_multiple_clients():
     assert msg2 is not None, "receiver-2 did not receive the event"
 
 
-# ---------------------------------------------------------------------------
-# Tests — player eviction
-# ---------------------------------------------------------------------------
-
-
 def test_host_evicts_player_on_udp_timeout():
     """When a client's last input timestamp is past UDP_INPUT_TIMEOUT the host removes it."""
     host = _make_post_lobby_host()
     assert "player2" in host.engine.world_state.characters
 
     host.last_input_time["player2"] = time.time() - UDP_INPUT_TIMEOUT - 1.0
-
-    with patch("distributed_smb.application.node_controller.send_game_event"):
-        host._check_player_disconnections()
+    host._check_player_disconnections()
 
     assert "player2" not in host.engine.world_state.characters
     assert host.roster.get_player("player2") is None
@@ -255,28 +235,24 @@ def test_evict_player_clears_all_associated_state():
 
 
 def test_host_broadcasts_player_left_on_udp_timeout():
-    """Host calls send_game_event with a PlayerLeft message when evicting via UDP timeout."""
+    """Host calls game_event_broker.send() with PlayerLeft when evicting via UDP timeout."""
     host = _make_post_lobby_host()
     host.last_input_time["player2"] = time.time() - UDP_INPUT_TIMEOUT - 1.0
 
     sent_payloads: list[bytes] = []
 
-    def capture(payload: bytes) -> None:
-        sent_payloads.append(payload)
+    class _SpyBroker(NoopGameEventBroker):
+        def send(self, payload: bytes) -> None:
+            sent_payloads.append(payload)
 
-    with patch("distributed_smb.application.node_controller.send_game_event", side_effect=capture):
-        host._check_player_disconnections()
+    host.game_event_broker = _SpyBroker()
+    host._check_player_disconnections()
 
     assert len(sent_payloads) == 1
     data = json.loads(sent_payloads[0])
     msg = _serializer.decode_ws_message(data)
     assert isinstance(msg, PlayerLeft)
     assert msg.player_id == "player2"
-
-
-# ---------------------------------------------------------------------------
-# Tests — client-side event application
-# ---------------------------------------------------------------------------
 
 
 def test_client_applies_player_left_event():
