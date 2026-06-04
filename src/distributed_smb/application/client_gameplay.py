@@ -1,14 +1,7 @@
-"""Client-side frame synchronisation mixin.
-
-M5 insertion points:
-  - _process_client_frame: predict() before tick, reconcile() on snapshot
-  - _drain_snapshot_packets: shadow copy updated on every new snapshot
-  - _get_display_world_state: interpolated remote positions passed to Renderer
-"""
+"""Client-side frame synchronisation mixin."""
 
 import logging
 
-from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.gameplay import PlayerInputPacket
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
@@ -56,16 +49,6 @@ class ClientGameplayMixin:
                 shadow = self.shadow_copy_factory()
                 self.shadow_copies[pid] = shadow
             shadow.update(char_state)
-
-    def _get_display_world_state(self) -> WorldState:
-        """Return world state with shadow-copy display positions for remote players.
-
-        Does not mutate engine.world_state — builds a display-only view so that
-        reconciliation always operates on the real predicted positions.
-        """
-        if not self.shadow_copies:
-            return self.engine.world_state
-        return self._build_visual_world_state()
 
     def _send_input_packet(self, local_input: InputState) -> None:
         """Send the local client's input packet to the authoritative host."""

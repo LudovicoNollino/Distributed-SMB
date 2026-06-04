@@ -150,7 +150,7 @@ def test_display_world_state_uses_shadow_copy_state():
     interpolated = CharacterState(player_id=ctrl.remote_player_id, x=150, y=100)
     ctrl.shadow_copies[ctrl.remote_player_id].update(interpolated)
 
-    display = ctrl._get_display_world_state()
+    display = ctrl._build_visual_world_state()
     assert display.characters[ctrl.remote_player_id].x == interpolated.x
     assert display.characters[ctrl.remote_player_id].y == interpolated.y
 
@@ -163,7 +163,7 @@ def test_display_world_state_does_not_mutate_engine():
     interpolated = CharacterState(player_id=ctrl.remote_player_id, x=999, y=999)
     ctrl.shadow_copies[ctrl.remote_player_id].update(interpolated)
 
-    ctrl._get_display_world_state()
+    ctrl._build_visual_world_state()
 
     # engine.world_state.characters must be unchanged
     assert ctrl.engine.world_state.characters == original_chars
@@ -174,17 +174,18 @@ def test_display_world_state_preserves_local_player_from_engine():
     ctrl._init_shadow_copies()
 
     local_state = ctrl.engine.world_state.characters[ctrl.local_player_id]
-    display = ctrl._get_display_world_state()
+    display = ctrl._build_visual_world_state()
     assert display.characters[ctrl.local_player_id] is local_state
 
 
 def test_display_world_state_no_shadow_copies_returns_engine_state():
-    """HOST path or pre-lobby CLIENT: returns engine.world_state directly."""
+    """HOST path or pre-lobby CLIENT: visual state matches engine.world_state data."""
     ctrl = NodeController()
     ctrl.bootstrap(role=PlayerRole.HOST)
     # shadow_copies is empty for HOST
-    display = ctrl._get_display_world_state()
-    assert display is ctrl.engine.world_state
+    display = ctrl._build_visual_world_state()
+    assert display.sequence_number == ctrl.engine.world_state.sequence_number
+    assert display.characters == ctrl.engine.world_state.characters
 
 
 def test_no_crash_when_no_snapshot_arrives():
@@ -193,7 +194,7 @@ def test_no_crash_when_no_snapshot_arrives():
     ctrl._init_shadow_copies()
 
     # No update called on shadow copy yet → get_display_state() returns None
-    display = ctrl._get_display_world_state()
+    display = ctrl._build_visual_world_state()
     # Remote player should still be present (from engine), not from shadow copy
     assert ctrl.remote_player_id in display.characters
 

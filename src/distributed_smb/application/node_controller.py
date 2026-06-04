@@ -1,10 +1,10 @@
 """Thin orchestrator: wires domain, network, and presentation components."""
 
-from collections.abc import Callable
-from copy import deepcopy
 import importlib
 import logging
 import time
+from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
