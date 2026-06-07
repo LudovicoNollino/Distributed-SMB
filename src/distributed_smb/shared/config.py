@@ -19,6 +19,9 @@ LOBBY_WS_URL_TEMPLATE = "ws://{host}:{port}{path}"
 GAME_EVENT_WS_PORT = 50003
 GAME_EVENT_WS_PATH = "/game-events"
 
+# Session discovery (UDP broadcast)
+DISCOVERY_UDP_PORT = 59099
+
 # Player disconnect detection
 UDP_INPUT_TIMEOUT = 5.0  # seconds without UDP input before a peer is considered gone
 GAME_EVENT_HEARTBEAT_INTERVAL = 5.0  # seconds between WebSocket heartbeat pings
