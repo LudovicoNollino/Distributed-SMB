@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import socket
 
 from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
 from distributed_smb.application.protocols import NoopLobbyContainerManager
@@ -12,6 +13,7 @@ from distributed_smb.network.lobby_container import LobbyContainerManager
 from distributed_smb.network.lobby_service import LobbyService
 from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.presentation.lobby_screen import LobbyScreen
+from distributed_smb.presentation.menu_screen import MenuScreen
 from distributed_smb.shared.config import (
     ARTIFICIAL_LATENCY_MS,
     DEFAULT_HOST,
@@ -70,6 +72,21 @@ def get_controller(
     )
 
 
+def _detect_local_ip() -> str:
+    """Best-effort detection of this machine's LAN-facing IP address.
+
+    Opens a UDP socket toward a public address — no packet is actually sent,
+    the OS just resolves which local interface the route would use. Falls
+    back to DEFAULT_HOST on machines with no route (e.g. fully offline).
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        try:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+        except OSError:
+            return DEFAULT_HOST
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command line options for the loopback host/client runtime."""
     parser = argparse.ArgumentParser(description="Distributed SMB node")
@@ -97,8 +114,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--local-ip",
         type=str,
-        default=DEFAULT_HOST,
-        help="This machine's IP on the LAN, advertised to peers via the lobby",
+        default=None,
+        help=(
+            "This machine's IP on the LAN, advertised to peers via the lobby. "
+            "Omit to auto-detect from the default network route."
+        ),
     )
     parser.add_argument(
         "--latency",
@@ -117,7 +137,7 @@ def main(
     packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
     artificial_latency_ms: int = ARTIFICIAL_LATENCY_MS,
     host_ip: str | None = None,
-    local_ip: str = DEFAULT_HOST,
+    local_ip: str | None = None,
     session_id: str = "",
 ) -> NodeController:
     """Bootstrap the local node and start the graphical application."""
@@ -130,25 +150,33 @@ def main(
         artificial_latency_ms=artificial_latency_ms,
         use_discovery=use_discovery,
     )
-    controller.local_ip = local_ip
+    controller.local_ip = local_ip or _detect_local_ip()
+    logging.info("Advertising local IP %s to peers", controller.local_ip)
 
     if run_app:
         lobby_screen = LobbyScreen()
         if role is PlayerRole.CLIENT and not session_id:
-            join_details = lobby_screen.prompt_join_details(
-                initial_host_ip=host_ip or "",
-                initial_session_id=session_id,
-            )
-            if join_details is None:
+            if use_discovery:
+                join_result = lobby_screen.prompt_session_id(initial_session_id=session_id)
+            else:
+                join_result = lobby_screen.prompt_join_details(
+                    initial_host_ip=host_ip or "",
+                    initial_session_id=session_id,
+                )
+            if join_result is None:
                 logging.info("Client join cancelled before connecting to lobby")
                 controller.udp_handler.close_socket()
                 lobby_screen.close()
                 return controller
-            joined_host_ip, session_id = join_details
-            if joined_host_ip:
-                host_ip = joined_host_ip
-                use_discovery = False
-                controller.use_discovery = False
+
+            if use_discovery:
+                session_id = join_result
+            else:
+                joined_host_ip, session_id = join_result
+                if joined_host_ip:
+                    host_ip = joined_host_ip
+                    use_discovery = False
+                    controller.use_discovery = False
 
         if role is PlayerRole.CLIENT and not use_discovery:
             controller.remote_host = host_ip or DEFAULT_HOST
@@ -228,7 +256,16 @@ def _drop_rate(value: str) -> float:
 
 if __name__ == "__main__":
     args = parse_args()
-    selected_role = PlayerRole.CLIENT if args.client else PlayerRole.HOST
+    if args.host:
+        selected_role = PlayerRole.HOST
+    elif args.client:
+        selected_role = PlayerRole.CLIENT
+    else:
+        menu = MenuScreen()
+        selected_role = menu.prompt_role_selection()
+        menu.close()
+        if selected_role is None:
+            raise SystemExit(0)
     main(
         run_app=True,
         role=selected_role,

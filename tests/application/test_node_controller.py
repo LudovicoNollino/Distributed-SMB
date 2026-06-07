@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pygame
 
@@ -8,7 +8,7 @@ from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.main import get_controller, parse_args
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.presentation.input_handler import InputHandler
-from distributed_smb.shared.config import LOBBY_WS_PORT, TICK_INTERVAL
+from distributed_smb.shared.config import DEFAULT_HOST, LOBBY_WS_PORT, TICK_INTERVAL
 from distributed_smb.shared.enums import NodeState, PlayerRole
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
@@ -156,9 +156,38 @@ def test_process_frame_marks_node_as_started():
 def test_parse_args_defaults():
     args = parse_args([])
     assert args.host_ip is None
+    assert args.local_ip is None
     assert args.session_id == ""
     assert not args.host
     assert not args.client
+
+
+def test_detect_local_ip_falls_back_to_default_host_without_route():
+    from distributed_smb.main import _detect_local_ip
+
+    fake_socket = MagicMock()
+    fake_socket.__enter__.return_value = fake_socket
+    fake_socket.connect.side_effect = OSError("network unreachable")
+
+    with patch("distributed_smb.main.socket.socket", return_value=fake_socket):
+        assert _detect_local_ip() == DEFAULT_HOST
+
+
+def test_main_uses_explicit_local_ip_when_provided():
+    from distributed_smb.main import main
+
+    controller = main(role=PlayerRole.HOST, local_ip="10.0.0.5")
+
+    assert controller.local_ip == "10.0.0.5"
+
+
+def test_main_auto_detects_local_ip_when_not_provided():
+    from distributed_smb.main import main
+
+    with patch("distributed_smb.main._detect_local_ip", return_value="192.168.1.42"):
+        controller = main(role=PlayerRole.HOST)
+
+    assert controller.local_ip == "192.168.1.42"
 
 
 def test_parse_args_client_flags():
@@ -175,6 +204,75 @@ def test_main_client_sets_ws_handler_host():
     assert controller.ws_handler.host == "192.168.1.10"
     assert controller.ws_handler.port == LOBBY_WS_PORT
     assert controller.remote_host == "192.168.1.10"
+
+
+def test_main_client_discovery_join_prompts_for_session_id_only():
+    from distributed_smb.main import main
+
+    calls = []
+
+    class FakeConnection:
+        def close(self):
+            calls.append("close")
+
+        def close_socket(self):
+            calls.append("close_socket")
+
+    class FakeContainerManager:
+        def stop(self):
+            calls.append("containers_stop")
+
+    class FakeGameEventHandler:
+        def connect(self):
+            calls.append("ws_connect")
+
+    class FakeController:
+        def __init__(self):
+            self.roster = object()
+            self.ws_handler = FakeConnection()
+            self.udp_handler = FakeConnection()
+            self.lobby_container_manager = FakeContainerManager()
+            self.game_event_handler = FakeGameEventHandler()
+            self.use_discovery = True
+
+        def lobby_phase(self, *, session_id, on_update, start_requested):
+            calls.append(f"lobby:{session_id}")
+            return self.roster
+
+        def run(self):
+            calls.append("run")
+
+    class FakeLobbyScreen:
+        def __init__(self):
+            self.start_requested = True
+
+        def prompt_session_id(self, *, initial_session_id):
+            calls.append("prompt_session_id")
+            return "abc123"
+
+        def prompt_join_details(self, **kwargs):
+            calls.append("prompt_join_details")
+            return ("10.0.0.5", "abc123")
+
+        def render(self, **kwargs):
+            return True
+
+        def play_game_start_transition(self, **kwargs):
+            return True
+
+        def close(self):
+            calls.append("screen_close")
+
+    fake_controller = FakeController()
+
+    with patch("distributed_smb.main.build_controller", return_value=fake_controller):
+        with patch("distributed_smb.main.LobbyScreen", FakeLobbyScreen):
+            controller = main(run_app=True, role=PlayerRole.CLIENT, host_ip=None, session_id="")
+
+    assert controller is fake_controller
+    assert "prompt_session_id" in calls
+    assert "prompt_join_details" not in calls
+    assert "lobby:abc123" in calls
 
 
 def test_main_plays_transition_before_game_run():
