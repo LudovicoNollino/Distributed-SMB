@@ -49,7 +49,7 @@ def _make_client() -> NodeController:
 
 
 # ---------------------------------------------------------------------------
-# Host-only: min_players=1 so no real client needed
+# Host-only: the host triggers the start manually, no real client needed
 # ---------------------------------------------------------------------------
 
 
@@ -57,7 +57,7 @@ def test_host_lobby_phase_single_player():
     host = _make_host()
 
     with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-        roster = host.lobby_phase(min_players=1)
+        roster = host.lobby_phase(start_requested=lambda: True)
 
     assert host.session_id != ""
     assert len(roster.players) == 1
@@ -79,7 +79,7 @@ def test_host_and_client_lobby_phase():
     def run_host():
         try:
             with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                host.lobby_phase(min_players=2)
+                host.lobby_phase(start_requested=lambda: len(host.roster.players) >= 2)
         except Exception as exc:
             errors.append(exc)
 
@@ -112,23 +112,9 @@ def test_host_and_client_lobby_phase():
 
 
 def test_host_solo_world_has_only_one_player():
-    """With min_players=1 the world must contain only the host's character."""
+    """A host who starts solo must see a world with only their own character."""
     host = _make_host()
     with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-        host.lobby_phase(min_players=1)
+        host.lobby_phase(start_requested=lambda: True)
 
-    assert set(host.engine.world_state.characters) == {"player1"}
-
-
-def test_host_can_manually_start_before_min_players():
-    host = _make_host()
-
-    with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-        roster = host.lobby_phase(
-            min_players=2,
-            start_requested=lambda: True,
-        )
-
-    assert len(roster.players) == 1
-    assert roster.players[0].is_host is True
     assert set(host.engine.world_state.characters) == {"player1"}

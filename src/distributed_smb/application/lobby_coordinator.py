@@ -11,7 +11,6 @@ from distributed_smb.shared.config import (
     LOBBY_STARTUP_WAIT,
     LOBBY_TIMEOUT,
     LOBBY_WS_PORT,
-    MIN_PLAYERS_TO_START,
 )
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.messages.session import (
@@ -39,7 +38,6 @@ class LobbyMixin:
         self,
         *,
         session_id: str = "",
-        min_players: int = MIN_PLAYERS_TO_START,
         on_update: LobbyUpdateCallback | None = None,
         start_requested: StartRequestedCallback | None = None,
     ) -> GlobalRoster:
@@ -47,7 +45,6 @@ class LobbyMixin:
         self._notify_lobby_update("Entering lobby", on_update)
         if self.role is PlayerRole.HOST:
             self._host_lobby_phase(
-                min_players=min_players,
                 on_update=on_update,
                 start_requested=start_requested,
             )
@@ -72,7 +69,6 @@ class LobbyMixin:
     def _host_lobby_phase(
         self,
         *,
-        min_players: int,
         on_update: LobbyUpdateCallback | None = None,
         start_requested: StartRequestedCallback | None = None,
     ) -> None:
@@ -105,11 +101,7 @@ class LobbyMixin:
             msg = self.ws_handler.poll()
             if isinstance(msg, RosterUpdate):
                 self.roster = msg.roster
-                self._notify_lobby_update("Waiting for players", on_update)
-                if len(self.roster.players) >= min_players:
-                    break
-            else:
-                self._notify_lobby_update("Waiting for players", on_update)
+            self._notify_lobby_update("Waiting for players", on_update)
             if start_requested is not None and start_requested() and self.roster.players:
                 LOGGER.info("Host manually requested game start")
                 break

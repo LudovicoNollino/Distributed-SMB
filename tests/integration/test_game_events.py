@@ -75,7 +75,7 @@ def _run_lobby(host: NodeController, client: NodeController) -> list:
     def run_host():
         try:
             with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                host.lobby_phase(min_players=2)
+                host.lobby_phase(start_requested=lambda: len(host.roster.players) >= 2)
         except Exception as exc:
             errors.append(exc)
 
