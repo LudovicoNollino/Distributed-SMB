@@ -18,9 +18,13 @@ from distributed_smb.application.lobby_coordinator import (
     StartRequestedCallback,
 )
 from distributed_smb.application.protocols import (
+    DiscoveryServiceProtocol,
     GameEventBrokerProtocol,
+    LobbyContainerManagerProtocol,
     LobbyServiceProtocol,
+    NoopDiscoveryService,
     NoopGameEventBroker,
+    NoopLobbyContainerManager,
     NoopLobbyService,
 )
 from distributed_smb.application.reconciliation import (
@@ -111,6 +115,11 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     shadow_copy_factory: Callable[[], ShadowCopyProtocol] = field(default=NoopShadowCopy)
     game_event_broker: GameEventBrokerProtocol = field(default_factory=NoopGameEventBroker)
     lobby_service: LobbyServiceProtocol = field(default_factory=NoopLobbyService)
+    discovery_service: DiscoveryServiceProtocol = field(default_factory=NoopDiscoveryService)
+    lobby_container_manager: LobbyContainerManagerProtocol = field(
+        default_factory=NoopLobbyContainerManager
+    )
+    use_discovery: bool = False
     time_provider: Callable[[], float] = field(default_factory=lambda: time.monotonic)
 
     def __post_init__(self) -> None:
@@ -120,6 +129,9 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     def _make_ws_client(self, host: str, port: int, path: str) -> None:
         """Create a WebSocket client handler and assign it as the game event receiver."""
         self.game_event_handler = WsHandler(host=host, port=port, path=path)
+
+    def _make_lobby_ws_client(self, host: str, port: int) -> None:
+        self.ws_handler = WsHandler(host=host, port=port)
 
     def _init_shadow_copies(self) -> None:
         """Initialise one ShadowCopy per remote player (CLIENT only, called after lobby)."""

@@ -4,7 +4,11 @@ import argparse
 import logging
 
 from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
+from distributed_smb.application.protocols import NoopLobbyContainerManager
+from distributed_smb.network.discovery import DiscoveryService
+from distributed_smb.network.game_event_broker_http import HttpGameEventBroker
 from distributed_smb.network.game_event_server import GameEventBroker
+from distributed_smb.network.lobby_container import LobbyContainerManager
 from distributed_smb.network.lobby_service import LobbyService
 from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.presentation.lobby_screen import LobbyScreen
@@ -22,12 +26,25 @@ def build_controller(
     role: PlayerRole = PlayerRole.HOST,
     packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
     artificial_latency_ms: int = ARTIFICIAL_LATENCY_MS,
+    use_discovery: bool = False,
 ) -> NodeController:
     """Create and bootstrap the application's central controller."""
-    controller = NodeController(
-        game_event_broker=GameEventBroker(),
-        lobby_service=LobbyService(),
-    ).bootstrap(
+    if use_discovery:
+        container_mgr = (
+            LobbyContainerManager() if role is PlayerRole.HOST else NoopLobbyContainerManager()
+        )
+        controller = NodeController(
+            game_event_broker=HttpGameEventBroker(),
+            discovery_service=DiscoveryService(),
+            lobby_container_manager=container_mgr,
+            use_discovery=True,
+        )
+    else:
+        controller = NodeController(
+            game_event_broker=GameEventBroker(),
+            lobby_service=LobbyService(),
+        )
+    controller.bootstrap(
         role=role,
         packet_drop_rate=packet_drop_rate,
         artificial_latency_ms=artificial_latency_ms,
@@ -41,6 +58,7 @@ def get_controller(
     role: PlayerRole = PlayerRole.HOST,
     packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
     artificial_latency_ms: int = ARTIFICIAL_LATENCY_MS,
+    use_discovery: bool = False,
 ) -> NodeController:
     """Get a bootstrapped controller without starting the GUI (for testing)."""
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
@@ -48,6 +66,7 @@ def get_controller(
         role=role,
         packet_drop_rate=packet_drop_rate,
         artificial_latency_ms=artificial_latency_ms,
+        use_discovery=use_discovery,
     )
 
 
@@ -66,8 +85,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--host-ip",
         type=str,
-        default=DEFAULT_HOST,
-        help="IP address of the host machine (client uses this to reach the lobby)",
+        default=None,
+        help="IP of the host machine (client). Omit to use UDP broadcast discovery.",
     )
     parser.add_argument(
         "--session-id",
@@ -97,17 +116,19 @@ def main(
     role: PlayerRole = PlayerRole.HOST,
     packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
     artificial_latency_ms: int = ARTIFICIAL_LATENCY_MS,
-    host_ip: str = DEFAULT_HOST,
+    host_ip: str | None = None,
     local_ip: str = DEFAULT_HOST,
     session_id: str = "",
 ) -> NodeController:
     """Bootstrap the local node and start the graphical application."""
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-    logging.info("Starting Distributed SMB in %s mode", role)
+    use_discovery = host_ip is None
+    logging.info("Starting Distributed SMB in %s mode (discovery=%s)", role, use_discovery)
     controller = build_controller(
         role=role,
         packet_drop_rate=packet_drop_rate,
         artificial_latency_ms=artificial_latency_ms,
+        use_discovery=use_discovery,
     )
     controller.local_ip = local_ip
 
@@ -115,7 +136,7 @@ def main(
         lobby_screen = LobbyScreen()
         if role is PlayerRole.CLIENT and not session_id:
             join_details = lobby_screen.prompt_join_details(
-                initial_host_ip=host_ip,
+                initial_host_ip=host_ip or "",
                 initial_session_id=session_id,
             )
             if join_details is None:
@@ -123,11 +144,15 @@ def main(
                 controller.udp_handler.close_socket()
                 lobby_screen.close()
                 return controller
-            host_ip, session_id = join_details
+            joined_host_ip, session_id = join_details
+            if joined_host_ip:
+                host_ip = joined_host_ip
+                use_discovery = False
+                controller.use_discovery = False
 
-        if role is PlayerRole.CLIENT:
-            controller.remote_host = host_ip
-            controller.ws_handler = WsHandler(host=host_ip, port=LOBBY_WS_PORT)
+        if role is PlayerRole.CLIENT and not use_discovery:
+            controller.remote_host = host_ip or DEFAULT_HOST
+            controller.ws_handler = WsHandler(host=host_ip or DEFAULT_HOST, port=LOBBY_WS_PORT)
 
         lobby_screen.render(
             role=role,
@@ -159,16 +184,19 @@ def main(
                 logging.info("Gameplay start cancelled during transition")
                 controller.ws_handler.close()
                 controller.udp_handler.close_socket()
+                controller.lobby_container_manager.stop()
                 return controller
         except LobbyCancelledError:
             logging.info("Lobby closed before game start")
             controller.ws_handler.close()
             controller.udp_handler.close_socket()
+            controller.lobby_container_manager.stop()
             return controller
         except Exception as exc:
             logging.exception("Lobby failed before game start")
             controller.ws_handler.close()
             controller.udp_handler.close_socket()
+            controller.lobby_container_manager.stop()
             lobby_screen.show_error(
                 title="Lobby connection failed",
                 message=str(exc),
@@ -177,10 +205,13 @@ def main(
         finally:
             lobby_screen.close()
 
-        controller.run()
-    elif role is PlayerRole.CLIENT:
-        controller.remote_host = host_ip
-        controller.ws_handler = WsHandler(host=host_ip, port=LOBBY_WS_PORT)
+        try:
+            controller.run()
+        finally:
+            controller.lobby_container_manager.stop()
+    elif role is PlayerRole.CLIENT and not use_discovery:
+        controller.remote_host = host_ip or DEFAULT_HOST
+        controller.ws_handler = WsHandler(host=host_ip or DEFAULT_HOST, port=LOBBY_WS_PORT)
     return controller
 
 

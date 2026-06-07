@@ -77,8 +77,11 @@ class LobbyMixin:
         start_requested: StartRequestedCallback | None = None,
     ) -> None:
         self._notify_lobby_update("Creating lobby server", on_update)
-        self.lobby_service.launch(port=LOBBY_WS_PORT)
-        time.sleep(LOBBY_STARTUP_WAIT)
+        if self.use_discovery:
+            self.lobby_container_manager.start()
+        else:
+            self.lobby_service.launch(port=LOBBY_WS_PORT)
+            time.sleep(LOBBY_STARTUP_WAIT)
 
         self._notify_lobby_update("Connecting to lobby", on_update)
         self.ws_handler.connect()
@@ -93,6 +96,8 @@ class LobbyMixin:
         created: SessionCreated = self._poll_lobby(SessionCreated)
         self.session_id = created.session_id
         LOGGER.info("Session created: %s", self.session_id)
+        if self.use_discovery:
+            self.discovery_service.announce(self.session_id, LOBBY_WS_PORT)
         self._notify_lobby_update("Waiting for players", on_update)
 
         deadline = time.time() + LOBBY_TIMEOUT
@@ -110,8 +115,9 @@ class LobbyMixin:
                 break
             time.sleep(0.05)
 
-        self.game_event_broker.launch()
-        time.sleep(LOBBY_STARTUP_WAIT)
+        if not self.use_discovery:
+            self.game_event_broker.launch()
+            time.sleep(LOBBY_STARTUP_WAIT)
         self._notify_lobby_update("Broadcasting game start", on_update)
         self.ws_handler.send(GameStart(session_id=self.session_id))
         self._poll_lobby(GameStart)
@@ -124,6 +130,9 @@ class LobbyMixin:
         on_update: LobbyUpdateCallback | None = None,
     ) -> None:
         self._notify_lobby_update("Connecting to lobby", on_update)
+        if self.use_discovery:
+            host_ip, lobby_port = self.discovery_service.discover(session_id)
+            self._make_lobby_ws_client(host_ip, lobby_port)
         self.ws_handler.connect()
         self.ws_handler.send(
             SessionJoin(

@@ -8,7 +8,7 @@ from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.main import get_controller, parse_args
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.presentation.input_handler import InputHandler
-from distributed_smb.shared.config import DEFAULT_HOST, LOBBY_WS_PORT, TICK_INTERVAL
+from distributed_smb.shared.config import LOBBY_WS_PORT, TICK_INTERVAL
 from distributed_smb.shared.enums import NodeState, PlayerRole
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
@@ -155,7 +155,7 @@ def test_process_frame_marks_node_as_started():
 
 def test_parse_args_defaults():
     args = parse_args([])
-    assert args.host_ip == DEFAULT_HOST
+    assert args.host_ip is None
     assert args.session_id == ""
     assert not args.host
     assert not args.client
@@ -186,11 +186,16 @@ def test_main_plays_transition_before_game_run():
         def close(self):
             calls.append("close")
 
+    class FakeContainerManager:
+        def stop(self):
+            calls.append("containers_stop")
+
     class FakeController:
         def __init__(self):
             self.roster = object()
             self.ws_handler = FakeConnection()
             self.udp_handler = FakeConnection()
+            self.lobby_container_manager = FakeContainerManager()
 
         def lobby_phase(self, *, session_id, on_update, start_requested):
             calls.append("lobby")
@@ -224,11 +229,25 @@ def test_main_plays_transition_before_game_run():
 
     assert controller is fake_controller
     assert calls.index("lobby") < calls.index("transition") < calls.index("run")
+    assert "containers_stop" in calls
+    assert calls.index("run") < calls.index("containers_stop")
 
 
-def test_client_snapshot_updates_environment_state():
+def test_client_snapshot_updates_characters_preserves_environment():
+    """UDP snapshot updates character positions but must NOT override environment state.
+
+    Blocks, power-ups, and gates are managed exclusively by WebSocket events.
+    Applying environment from UDP snapshots would cause WS events to arrive late
+    (block already destroyed, power-up already collected) and be silently ignored.
+    """
     controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
     serializer = Serializer()
+
+    # Set a known local environment state that should be preserved after reconciliation.
+    local_block = controller.engine.world_state.environment.destructible_blocks[0]
+    local_block.destroyed = False
+
+    # Build a snapshot that tries to override the environment.
     world_state = WorldState(
         sequence_number=12,
         characters={"player1": CharacterState(player_id="player1", x=180.0, y=96.0)},
@@ -254,14 +273,15 @@ def test_client_snapshot_updates_environment_state():
             return packet, ("127.0.0.1", 50010)
 
     controller.udp_handler = FakeUdpHandler(payload)
-
     controller._drain_snapshot_packets()
 
+    # Characters are updated from the snapshot.
     assert controller.engine.world_state.sequence_number == 12
     assert controller.engine.world_state.characters["player1"].x == 180.0
-    assert controller.engine.world_state.environment.destructible_blocks[0].destroyed is True
-    assert controller.engine.world_state.environment.power_ups["pu-a"].owner == "player1"
-    assert controller.engine.world_state.environment.cooperative_gates["gate-a"].state == "open"
+    # Environment is preserved from local state — snapshot's environment is discarded.
+    assert controller.engine.world_state.environment.destructible_blocks[0].destroyed is False
+    assert "pu-a" not in controller.engine.world_state.environment.power_ups
+    assert "gate-a" not in controller.engine.world_state.environment.cooperative_gates
 
 
 def test_client_process_frame_returns_visual_state_with_predicted_local_player():
