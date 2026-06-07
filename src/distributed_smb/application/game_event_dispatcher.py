@@ -68,21 +68,21 @@ class GameEventMixin:
             if msg is None:
                 return
             if isinstance(msg, BlockDestroyedMessage):
+                LOGGER.info("game event applied: %s", msg)
                 block = self.engine.world_state.get_block(msg.position)
                 if block and not block.destroyed:
                     block.destroyed = True
-                    LOGGER.info("game event applied: %s", msg)
             elif isinstance(msg, PowerUpCollectedMessage):
+                LOGGER.info("game event applied: %s", msg)
                 pu = self.engine.world_state.get_power_up(msg.powerup_id)
                 if pu:
                     pu.collected = True
                     pu.owner = msg.player_id
-                    LOGGER.info("game event applied: %s", msg)
             elif isinstance(msg, GateStateChangedMessage):
+                LOGGER.info("game event applied: %s", msg)
                 gate = self.engine.world_state.get_gate(msg.gate_id)
                 if gate:
                     gate.state = msg.new_state
-                    LOGGER.info("game event applied: %s", msg)
             elif isinstance(msg, PlayerLeft):
                 LOGGER.info("Player left (received): %s", msg.player_id)
                 self._evict_player(msg.player_id)

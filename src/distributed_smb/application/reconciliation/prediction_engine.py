@@ -67,7 +67,11 @@ class PredictionEngine:
         world_state = authoritative_snapshot.world_state
         self.buffer.acknowledge(world_state.sequence_number)
         pending_inputs = self.buffer.get_unacknowledged()
+        # Preserve local environment: blocks/power-ups/gates are managed exclusively
+        # by WS events — the UDP snapshot must not override them.
+        local_env = self.engine.world_state.environment
         self.engine.world_state = deepcopy(world_state)
+        self.engine.world_state.environment = local_env
         if pending_inputs:
             self._replay_pending(pending_inputs)
 
