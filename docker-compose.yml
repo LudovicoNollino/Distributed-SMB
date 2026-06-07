@@ -1,0 +1,16 @@
+services:
+  lobby:
+    build:
+      context: .
+      dockerfile: Dockerfile.lobby
+    image: distributed-smb-lobby
+    ports:
+      - "50002:50002"
+
+  gameevents:
+    build:
+      context: .
+      dockerfile: Dockerfile.gameevents
+    image: distributed-smb-gameevents
+    ports:
+      - "50003:50003"

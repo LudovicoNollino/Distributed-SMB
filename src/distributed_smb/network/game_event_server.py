@@ -4,9 +4,10 @@ import asyncio
 import logging
 import queue
 import threading
+from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 
 from distributed_smb.shared.config import (
     GAME_EVENT_HEARTBEAT_INTERVAL,
@@ -22,7 +23,14 @@ _ws_to_event: dict[int, asyncio.Event] = {}  # id(ws) → disconnect signal
 _disconnect_queue: queue.Queue[str] = queue.Queue()
 _loop: asyncio.AbstractEventLoop | None = None
 
-app = FastAPI(title="Distributed SMB Game Events")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    asyncio.create_task(_heartbeat_loop())
+    yield
+
+
+app = FastAPI(title="Distributed SMB Game Events", lifespan=_lifespan)
 
 
 @app.websocket(GAME_EVENT_WS_PATH)
@@ -87,6 +95,13 @@ async def _heartbeat_loop() -> None:
                 event.set()
 
 
+@app.post("/events")
+async def receive_event(request: Request) -> None:
+    """Accept a game event from the host process and broadcast it to all clients."""
+    payload = await request.body()
+    await _broadcast(payload)
+
+
 def send_game_event(payload: bytes) -> None:
     """Send an encoded game event to all connected clients (thread-safe)."""
     if _loop is None:
@@ -134,7 +149,7 @@ def launch_game_event_server(
         _loop = asyncio.get_running_loop()
         config = uvicorn.Config(app, host=host, port=port, log_level="warning")
         server = uvicorn.Server(config)
-        await asyncio.gather(server.serve(), _heartbeat_loop())
+        await server.serve()
 
     def _run() -> None:
         loop = asyncio.new_event_loop()
