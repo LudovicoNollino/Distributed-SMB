@@ -86,11 +86,6 @@ class LobbyScreen:
                             host_ip = (host_ip + pasted_text)[:64]
                         else:
                             session_id = (session_id + pasted_text)[:96]
-                    elif event.unicode and event.unicode.isprintable():
-                        if active_field == "host_ip" and len(host_ip) < 64:
-                            host_ip += event.unicode
-                        elif active_field == "session_id" and len(session_id) < 96:
-                            session_id += event.unicode
                 elif event.type == pygame.TEXTINPUT and event.text.isprintable():
                     if active_field == "host_ip" and len(host_ip) < 64:
                         host_ip += event.text
@@ -103,6 +98,45 @@ class LobbyScreen:
                 active_field=active_field,
                 error_message=error_message,
             )
+            clock.tick(30)
+
+        pygame.key.stop_text_input()
+        return None
+
+    def prompt_session_id(self, *, initial_session_id: str = "") -> str | None:
+        """Collect only the session ID — LAN discovery resolves the host automatically."""
+        pygame.display.set_caption("Distributed SMB - Join Session")
+        pygame.key.start_text_input()
+        self._init_clipboard()
+        clock = pygame.time.Clock()
+        session_id = initial_session_id
+        error_message = ""
+
+        while not self.is_closed:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.is_closed = True
+                    pygame.key.stop_text_input()
+                    return None
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        self.is_closed = True
+                        pygame.key.stop_text_input()
+                        return None
+                    elif event.key == pygame.K_RETURN:
+                        if session_id.strip():
+                            pygame.key.stop_text_input()
+                            return session_id.strip()
+                        error_message = "Session ID is required"
+                    elif event.key == pygame.K_BACKSPACE:
+                        session_id = session_id[:-1]
+                    elif event.key == pygame.K_v and event.mod & pygame.KMOD_CTRL:
+                        session_id = (session_id + self._get_clipboard_text())[:96]
+                elif event.type == pygame.TEXTINPUT and event.text.isprintable():
+                    if len(session_id) < 96:
+                        session_id += event.text
+
+            self._render_session_id_form(session_id=session_id, error_message=error_message)
             clock.tick(30)
 
         pygame.key.stop_text_input()
@@ -337,6 +371,36 @@ class LobbyScreen:
         )
         pygame.display.flip()
 
+    def _render_session_id_form(self, *, session_id: str, error_message: str) -> None:
+        self._screen.fill(self.background_color)
+        self._draw_text("Join Session", self._title_font, self.text_color, 48, 54)
+        self._draw_text(
+            "Enter the Session ID — the host is found automatically on the LAN",
+            self._body_font,
+            self.muted_text_color,
+            52,
+            112,
+        )
+
+        self._draw_join_field(
+            label="Session ID",
+            value=session_id,
+            x=52,
+            y=220,
+            is_active=True,
+        )
+
+        if error_message:
+            self._draw_text(error_message, self._small_font, self.error_color, 58, 320)
+        self._draw_text(
+            "ENTER joins  |  ESC cancels",
+            self._small_font,
+            self.muted_text_color,
+            58,
+            472,
+        )
+        pygame.display.flip()
+
     def _render_game_start_transition(
         self,
         *,
@@ -476,7 +540,13 @@ class LobbyScreen:
 
     def _get_clipboard_text(self) -> str:
         try:
-            clipboard = pygame.scrap.get(pygame.SCRAP_TEXT)
+            # X11 advertises "text/plain;charset=utf-8" — pygame.SCRAP_TEXT ("text/plain")
+            # rarely matches it exactly, so look up any text/plain* type the clipboard offers.
+            text_type = next(
+                (t for t in pygame.scrap.get_types() if t.startswith("text/plain")),
+                pygame.SCRAP_TEXT,
+            )
+            clipboard = pygame.scrap.get(text_type)
         except pygame.error:
             return ""
         if clipboard is None:
