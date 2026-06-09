@@ -118,6 +118,8 @@ class GameEngine:
                 player.vy = JUMP_FORCE
                 player.on_ground = False
 
+            player.is_crouching = bool(input_state.down and player.on_ground)
+
     def tick(self, dt, inputs: dict[str, InputState]):
         for player in self.world_state.characters.values():
             player.prev_x = player.x

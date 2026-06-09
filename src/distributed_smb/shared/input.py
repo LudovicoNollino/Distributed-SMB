@@ -10,3 +10,4 @@ class InputState:
     left: bool = False
     right: bool = False
     jump: bool = False
+    down: bool = False
