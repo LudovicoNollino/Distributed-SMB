@@ -111,7 +111,7 @@ def _make_post_lobby_host() -> NodeController:
     nc.roster.add_player(
         RosterEntry(player_id="player2", host="127.0.0.1", udp_port=50001, join_index=1)
     )
-    nc.last_input_time["player2"] = time.time()
+    nc._rebuild_world_from_roster()
     nc.cached_remote_inputs["player2"] = InputState()
     nc.last_remote_input_sequence["player2"] = 0
     return nc
@@ -128,6 +128,7 @@ def _make_post_lobby_client() -> NodeController:
     nc.roster.add_player(
         RosterEntry(player_id="player2", host="127.0.0.1", udp_port=50001, join_index=1)
     )
+    nc._rebuild_world_from_roster()
     return nc
 
 

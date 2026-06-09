@@ -74,7 +74,7 @@ def test_connect_and_session_create():
     roster_msg = _poll_until(handler)
     assert isinstance(roster_msg, RosterUpdate)
     assert len(roster_msg.roster.players) == 1
-    assert roster_msg.roster.players[0].player_id == "host1"
+    assert roster_msg.roster.players[0].player_id == "player1"
 
     handler.close()
 

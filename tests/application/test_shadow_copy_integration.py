@@ -56,17 +56,19 @@ def test_noop_shadow_copy_overwrites_on_subsequent_updates():
 def _make_client_controller() -> NodeController:
     ctrl = NodeController()
     ctrl.bootstrap(role=PlayerRole.CLIENT)
+    # Simulate post-lobby world: host (player1) and local client (player2) are both present.
+    ctrl.remote_player_id = "player1"
+    ctrl.engine.spawn_player("player1", x=100, y=100)
     return ctrl
 
 
 def test_shadow_copies_empty_before_lobby():
-    ctrl = _make_client_controller()
+    ctrl = NodeController().bootstrap(role=PlayerRole.CLIENT)
     assert ctrl.shadow_copies == {}
 
 
 def test_shadow_copies_initialized_for_client_after_lobby():
     ctrl = _make_client_controller()
-    # Simulate that the engine already has both players (set up by _bootstrap_world)
     ctrl._init_shadow_copies()
     # CLIENT: remote player should have a shadow copy; local player should not
     assert ctrl.remote_player_id in ctrl.shadow_copies
@@ -98,6 +100,7 @@ def test_shadow_copy_factory_is_used_for_instantiation():
 
     ctrl = NodeController(shadow_copy_factory=factory)
     ctrl.bootstrap(role=PlayerRole.CLIENT)
+    ctrl.engine.spawn_player("player1", x=100, y=100)  # simulate post-lobby remote player
     ctrl._init_shadow_copies()
     assert len(created) == 1  # one per remote player
 
@@ -175,6 +178,20 @@ def test_display_world_state_preserves_local_player_from_engine():
 
     local_state = ctrl.engine.world_state.characters[ctrl.local_player_id]
     display = ctrl._build_visual_world_state()
+    assert display.characters[ctrl.local_player_id] is local_state
+
+
+def test_build_visual_world_state_includes_local_player_when_removed_by_reconcile():
+    """local_visual_state is shown even if reconcile removed the local player from the engine."""
+    ctrl = _make_client_controller()
+    ctrl._init_shadow_copies()
+
+    local_state = ctrl.engine.world_state.characters[ctrl.local_player_id]
+    # Simulate reconcile removing local player (host snapshot didn't include them).
+    del ctrl.engine.world_state.characters[ctrl.local_player_id]
+
+    display = ctrl._build_visual_world_state(local_visual_state=local_state)
+    assert ctrl.local_player_id in display.characters
     assert display.characters[ctrl.local_player_id] is local_state
 
 

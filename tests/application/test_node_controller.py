@@ -49,6 +49,8 @@ def test_build_runtime_context_exposes_expected_components():
         pygame.K_SPACE: False,
         pygame.K_UP: False,
         pygame.K_w: False,
+        pygame.K_DOWN: False,
+        pygame.K_s: False,
     }
     handler = InputHandler(key_provider=lambda: fake_keys)
     controller = NodeController().bootstrap()
@@ -96,20 +98,14 @@ def test_host_bootstrap_configures_players_and_role():
 
     assert controller.role is PlayerRole.HOST
     assert controller.engine.world_state.get_player(controller.local_player_id) is not None
-    assert controller.engine.world_state.get_player(controller.remote_player_id) is not None
 
 
-def test_host_and_client_bootstrap_use_consistent_player_spawn_positions():
-    host = NodeController().bootstrap(role=PlayerRole.HOST)
-    client = NodeController().bootstrap(role=PlayerRole.CLIENT)
-
-    host_player1 = host.engine.world_state.get_player("player1")
-    host_player2 = host.engine.world_state.get_player("player2")
-    client_player1 = client.engine.world_state.get_player("player1")
-    client_player2 = client.engine.world_state.get_player("player2")
-
-    assert (host_player1.x, host_player1.y) == (client_player1.x, client_player1.y)
-    assert (host_player2.x, host_player2.y) == (client_player2.x, client_player2.y)
+def test_spawn_position_scales_with_join_index():
+    controller = NodeController()
+    assert controller._spawn_position_for(0) == (100, 100)
+    assert controller._spawn_position_for(1) == (240, 100)
+    assert controller._spawn_position_for(2) == (380, 100)
+    assert controller._spawn_position_for(3) == (520, 100)
 
 
 def test_client_process_frame_increments_input_sequence():
@@ -385,11 +381,12 @@ def test_client_snapshot_updates_characters_preserves_environment():
 def test_client_process_frame_returns_visual_state_with_predicted_local_player():
     controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
     serializer = Serializer()
+    local_pid = controller.local_player_id  # "player2" placeholder after bootstrap
     authoritative_world = WorldState(
         sequence_number=20,
         characters={
             "player1": CharacterState(player_id="player1", x=100.0, y=100.0),
-            "player2": CharacterState(player_id="player2", x=240.0, y=100.0),
+            local_pid: CharacterState(player_id=local_pid, x=100.0, y=100.0),
         },
     )
     payload = serializer.encode_message(
@@ -418,10 +415,11 @@ def test_client_process_frame_returns_visual_state_with_predicted_local_player()
 
     visual_world = controller.process_frame(TICK_INTERVAL, InputState(right=True))
 
-    assert visual_world.characters["player2"].x > authoritative_world.characters["player2"].x
-    assert controller.engine.world_state.characters["player2"].x == authoritative_world.characters[
-        "player2"
-    ].x
+    assert visual_world.characters[local_pid].x > authoritative_world.characters[local_pid].x
+    assert (
+        controller.engine.world_state.characters[local_pid].x
+        == authoritative_world.characters[local_pid].x
+    )
 
 
 def test_visual_world_state_clones_environment_from_authoritative_state():

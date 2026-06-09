@@ -64,7 +64,7 @@ def test_session_create_returns_session_created():
         assert roster_msg["message_type"] == MessageType.ROSTER_UPDATE
         players = roster_msg["roster"]["players"]
         assert len(players) == 1
-        assert players[0]["player_id"] == "host1"
+        assert players[0]["player_id"] == "player1"
         assert players[0]["is_host"] is True
 
 
