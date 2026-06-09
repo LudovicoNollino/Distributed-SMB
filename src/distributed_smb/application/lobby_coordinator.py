@@ -11,6 +11,7 @@ from distributed_smb.shared.config import (
     LOBBY_STARTUP_WAIT,
     LOBBY_TIMEOUT,
     LOBBY_WS_PORT,
+    player_id_for,
 )
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.messages.session import (
@@ -113,6 +114,15 @@ class LobbyMixin:
         self._notify_lobby_update("Broadcasting game start", on_update)
         self.ws_handler.send(GameStart(session_id=self.session_id))
         self._poll_lobby(GameStart)
+        # Drain any RosterUpdate messages that arrived concurrently with GameStart
+        # (e.g., a player joined at the exact moment the host sent GameStart).
+        _drain_until = time.time() + 0.1
+        while time.time() < _drain_until:
+            msg = self.ws_handler.poll()
+            if msg is None:
+                time.sleep(0.01)
+            elif isinstance(msg, RosterUpdate):
+                self.roster = msg.roster
         LOGGER.info("Lobby phase complete: %d players", len(self.roster.players))
 
     def _client_lobby_phase(
@@ -125,6 +135,7 @@ class LobbyMixin:
         if self.use_discovery:
             host_ip, lobby_port = self.discovery_service.discover(session_id)
             self._make_lobby_ws_client(host_ip, lobby_port)
+        self.udp_handler.open_socket()  # bind early so actual port is known before announcing
         self.ws_handler.connect()
         self.ws_handler.send(
             SessionJoin(
@@ -135,7 +146,10 @@ class LobbyMixin:
             )
         )
 
-        self._poll_lobby(SessionJoined)
+        joined: SessionJoined = self._poll_lobby(SessionJoined)
+        self.local_player_id = player_id_for(joined.join_index)
+        if hasattr(self.prediction_engine, "local_player_id"):
+            self.prediction_engine.local_player_id = self.local_player_id
         self._notify_lobby_update("Joined session", on_update)
 
         deadline = time.time() + LOBBY_TIMEOUT
@@ -168,11 +182,16 @@ class LobbyMixin:
         raise TimeoutError(f"Lobby timeout waiting for {expected_type.__name__}")
 
     def _rebuild_world_from_roster(self) -> None:
+        LOGGER.info(
+            "Rebuilding world from roster (%d players): %s",
+            len(self.roster.get_all_players()),
+            [e.player_id for e in self.roster.get_all_players()],
+        )
         self.engine.world_state.characters.clear()
         if hasattr(self, "shadow_copies"):
             self.shadow_copies.clear()
         for entry in self.roster.get_all_players():
-            x, y = self._spawn_position_for(entry.player_id)
+            x, y = self._spawn_position_for(entry.join_index)
             self.engine.spawn_player(entry.player_id, x=x, y=y, join_index=entry.join_index)
         now = time.time()
         self.last_input_time = {
@@ -182,10 +201,10 @@ class LobbyMixin:
         }
         others = [e for e in self.roster.get_all_players() if e.player_id != self.local_player_id]
         if others:
-            remote = others[0]
-            self.remote_player_id = remote.player_id
-            self.remote_host = remote.host
-            self.remote_port = remote.udp_port
-            if self.role is PlayerRole.CLIENT:
-                path = f"{GAME_EVENT_WS_PATH}?player_id={self.local_player_id}"
-                self._make_ws_client(remote.host, GAME_EVENT_WS_PORT, path)
+            self.remote_player_id = others[0].player_id
+        host_entry = next((e for e in self.roster.get_all_players() if e.is_host), None)
+        if host_entry and self.role is PlayerRole.CLIENT:
+            self.remote_host = host_entry.host
+            self.remote_port = host_entry.udp_port
+            path = f"{GAME_EVENT_WS_PATH}?player_id={self.local_player_id}"
+            self._make_ws_client(host_entry.host, GAME_EVENT_WS_PORT, path)

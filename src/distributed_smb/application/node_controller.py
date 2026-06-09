@@ -41,11 +41,9 @@ from distributed_smb.domain.world import CharacterState, WorldState
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.network.udp_handler import UdpHandler
 from distributed_smb.network.ws_handler import WsHandler
-from distributed_smb.presentation.input_handler import ControlScheme, InputHandler
+from distributed_smb.presentation.input_handler import InputHandler
 from distributed_smb.presentation.renderer import Renderer
 from distributed_smb.shared.config import (
-    CLIENT_PLAYER_ID,
-    CLIENT_UDP_PORT,
     DEFAULT_HOST,
     DEFAULT_PACKET_DROP_RATE,
     DEFAULT_UDP_PORT,
@@ -56,6 +54,7 @@ from distributed_smb.shared.config import (
     INPUT_HISTORY_SIZE,
     LOBBY_WS_PORT,
     TICK_INTERVAL,
+    player_id_for,
 )
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
@@ -98,9 +97,9 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     is_bootstrapped: bool = False
     role: PlayerRole = PlayerRole.HOST
     local_player_id: str = HOST_PLAYER_ID
-    remote_player_id: str = CLIENT_PLAYER_ID
+    remote_player_id: str = ""
     remote_host: str = DEFAULT_HOST
-    remote_port: int = CLIENT_UDP_PORT
+    remote_port: int = HOST_UDP_PORT
     input_sequence_number: int = 0
     last_remote_input_sequence: dict[str, int] = field(default_factory=dict)
     last_snapshot_sequence: int = 0
@@ -233,35 +232,26 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
         """Configure ports and player identities for host or client mode."""
         if self.role is PlayerRole.HOST:
             self.local_player_id = HOST_PLAYER_ID
-            self.remote_player_id = CLIENT_PLAYER_ID
-            self.input_handler.control_scheme = ControlScheme.ARROWS
             self.udp_handler = UdpHandler(
                 host="0.0.0.0",
                 port=HOST_UDP_PORT,
                 packet_drop_rate=packet_drop_rate,
                 artificial_latency_ms=artificial_latency_ms,
             )
-            self.remote_port = CLIENT_UDP_PORT
         else:
-            self.local_player_id = CLIENT_PLAYER_ID
-            self.remote_player_id = HOST_PLAYER_ID
-            self.input_handler.control_scheme = ControlScheme.WASD
+            self.local_player_id = player_id_for(1)  # placeholder, overwritten after lobby join
             self.udp_handler = UdpHandler(
                 host="0.0.0.0",
-                port=CLIENT_UDP_PORT,
+                port=0,  # OS assigns a unique port, avoiding same-machine collisions
                 packet_drop_rate=packet_drop_rate,
                 artificial_latency_ms=artificial_latency_ms,
             )
             self.remote_port = HOST_UDP_PORT
 
     def _bootstrap_world(self) -> None:
-        """Ensure both local and remote players exist in the local world."""
+        """Ensure the local player exists before lobby assigns the full roster."""
         if self.engine.world_state.get_player(self.local_player_id) is None:
-            x, y = self._spawn_position_for(self.local_player_id)
-            self.engine.spawn_player(self.local_player_id, x=x, y=y)
-        if self.engine.world_state.get_player(self.remote_player_id) is None:
-            x, y = self._spawn_position_for(self.remote_player_id)
-            self.engine.spawn_player(self.remote_player_id, x=x, y=y)
+            self.engine.spawn_player(self.local_player_id, x=100, y=100)
 
     def _build_visual_world_state(
         self,
@@ -285,19 +275,20 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
 
             visual_characters[player_id] = character
 
+        # Reconcile may have removed the local player from the engine if the host's
+        # snapshot doesn't include them yet. Always include the pre-reconcile capture.
+        if local_visual_state is not None and self.local_player_id not in visual_characters:
+            visual_characters[self.local_player_id] = local_visual_state
+
         return WorldState(
             sequence_number=self.engine.world_state.sequence_number,
             characters=visual_characters,
             environment=deepcopy(self.engine.world_state.environment),
         )
 
-    def _spawn_position_for(self, player_id: str) -> tuple[int, int]:
-        """Return a stable spawn point for each player across every process."""
-        if player_id == HOST_PLAYER_ID:
-            return 100, 100
-        if player_id == CLIENT_PLAYER_ID:
-            return 240, 100
-        return 100, 100
+    def _spawn_position_for(self, join_index: int) -> tuple[int, int]:
+        """Return a stable spawn point determined by join order (0-based)."""
+        return 100 + join_index * 140, 100
 
     def _load_game_app_class(self) -> type[Any] | None:
         """Load the optional Pygame runtime provided by the presentation layer."""
