@@ -7,7 +7,7 @@ import pygame
 
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.world import WorldState
-from distributed_smb.presentation.input_handler import ControlScheme, InputHandler
+from distributed_smb.presentation.input_handler import InputHandler
 from distributed_smb.presentation.renderer import Renderer
 from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
 from distributed_smb.shared.input import InputState
@@ -22,14 +22,8 @@ class GameApp:
     fps: int = 60
     max_frame_dt: float = 0.05
     local_player_id: str = "player1"
-    player2_id: str = "player2"
     engine: GameEngine = field(default_factory=GameEngine)
-    input_handler: InputHandler = field(
-        default_factory=lambda: InputHandler(control_scheme=ControlScheme.ARROWS)
-    )
-    player2_input_handler: InputHandler = field(
-        default_factory=lambda: InputHandler(control_scheme=ControlScheme.WASD)
-    )
+    input_handler: InputHandler = field(default_factory=InputHandler)
     renderer: Renderer = field(default_factory=Renderer)
     frame_handler: Callable[[float, InputState], WorldState] | None = None
 
@@ -40,85 +34,51 @@ class GameApp:
         self.clock = pygame.time.Clock()
 
     def _should_quit(self) -> bool:
-        """Return True when the user asks to close the window."""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return True
         return False
 
     def _clamp_player_to_window(self, player_id: str) -> None:
-        """Keep one player within the visible screen bounds."""
         character = self.engine.world_state.get_player(player_id)
         if character is None:
             return
-
-        min_x = 0
-        max_x = self.width - character.width
-        character.x = max(min_x, min(character.x, max_x))
-
-    def _read_inputs(self) -> dict[str, InputState]:
-        """Collect one shared input snapshot for every local player."""
-        return {
-            self.local_player_id: self.input_handler.read_input(),
-            self.player2_id: self.player2_input_handler.read_input(),
-        }
+        character.x = max(0, min(character.x, self.width - character.width))
 
     def _build_platform_rects(self) -> list[pygame.Rect]:
-        """Translate domain platforms into rectangles that the renderer can draw."""
         return [
-            pygame.Rect(
-                int(platform.x),
-                int(platform.y),
-                int(platform.width),
-                int(platform.height),
-            )
-            for platform in self.engine.platforms
+            pygame.Rect(int(p.x), int(p.y), int(p.width), int(p.height))
+            for p in self.engine.platforms
         ]
 
     def _update_window_caption(self, world_state: WorldState) -> None:
-        """Expose a little runtime context while the app loop is minimal."""
         character = self.get_local_player(world_state)
-        player1 = world_state.get_player("player1")
-        player2 = world_state.get_player("player2")
-        player1_coords = (
-            f"p1=({int(player1.x)},{int(player1.y)})" if player1 is not None else "p1=(missing)"
-        )
-        player2_coords = (
-            f"p2=({int(player2.x)},{int(player2.y)})" if player2 is not None else "p2=(missing)"
+        if character is None:
+            return
+        all_coords = " | ".join(
+            f"p{c.join_index + 1}=({int(c.x)},{int(c.y)})"
+            for c in sorted(world_state.characters.values(), key=lambda c: c.join_index)
         )
         pygame.display.set_caption(
             f"Distributed SMB [{self.local_player_id}] "
             f"| local=({int(character.x)},{int(character.y)}) "
-            f"| {player1_coords} "
-            f"| {player2_coords} "
-            f"seq={world_state.sequence_number}"
+            f"| {all_coords} seq={world_state.sequence_number}"
         )
 
     def run(self) -> None:
-        """Start the graphical loop."""
         running = True
-
         while running:
             dt = min(self.clock.tick(self.fps) / 1000, self.max_frame_dt)
             running = not self._should_quit()
-            render_world_state = self.engine.world_state
-            if self.frame_handler is None:
-                inputs = self._read_inputs()
-                self.engine.tick(dt, inputs)
-                self._clamp_player_to_window(self.local_player_id)
-                self._clamp_player_to_window(self.player2_id)
-            else:
-                local_input = self.input_handler.read_input()
-                render_world_state = self.frame_handler(dt, local_input)
-                self._clamp_player_to_window(self.local_player_id)
-                self._clamp_player_to_window(self.player2_id)
+            local_input = self.input_handler.read_input()
+            render_world_state = self.frame_handler(dt, local_input)
+            self._clamp_player_to_window(self.local_player_id)
             self._update_window_caption(render_world_state)
             self.renderer.render(
                 screen=self.screen,
                 world_state=render_world_state,
                 platforms=self._build_platform_rects(),
             )
-
         pygame.quit()
 
     def get_local_player(self, world_state: WorldState | None = None):

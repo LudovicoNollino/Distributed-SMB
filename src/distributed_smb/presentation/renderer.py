@@ -42,6 +42,8 @@ class Renderer:
             self.player_palette = {
                 "player1": (220, 50, 50),
                 "player2": (50, 90, 220),
+                "player3": (50, 180, 50),
+                "player4": (200, 150, 50),
             }
 
     def _resolve_facing(self, character: CharacterState) -> int:
@@ -59,6 +61,8 @@ class Renderer:
         """Classify the current sprite state from physics data."""
         if not character.on_ground:
             return "jump"
+        if character.is_crouching:
+            return "duck"
         if abs(character.vx) > 1:
             return "walk"
         return "idle"
@@ -103,19 +107,21 @@ class Renderer:
         leg_offset = 0.04 if state == "walk" and frame == 1 else -0.04 if state == "walk" else 0.0
         arm_offset = -0.04 if state == "walk" and frame == 1 else 0.04 if state == "walk" else 0.0
         jump_raise = -0.03 if state == "jump" else 0.0
+        duck_drop = 0.18 if state == "duck" else 0.0
 
-        rect(0.28, 0.07 + jump_raise, 0.44, 0.12, hat)
-        rect(0.23, 0.17 + jump_raise, 0.54, 0.06, hat)
-        rect(0.32, 0.23 + jump_raise, 0.36, 0.18, skin)
-        rect(0.6, 0.29 + jump_raise, 0.05, 0.05, eye)
-        rect(0.35, 0.42 + jump_raise, 0.3, 0.12, shirt)
-        rect(0.26, 0.42 + arm_offset + jump_raise, 0.08, 0.22, shirt)
-        rect(0.66, 0.42 - arm_offset + jump_raise, 0.08, 0.22, shirt)
-        rect(0.32, 0.54 + jump_raise, 0.36, 0.16, overalls)
-        rect(0.39, 0.56 + jump_raise, 0.06, 0.14, shirt)
-        rect(0.55, 0.56 + jump_raise, 0.06, 0.14, shirt)
-        rect(0.34, 0.7 + leg_offset + jump_raise, 0.12, 0.16, boots)
-        rect(0.54, 0.7 - leg_offset + jump_raise, 0.12, 0.16, boots)
+        y = jump_raise + duck_drop
+        rect(0.28, 0.07 + y, 0.44, 0.12, hat)
+        rect(0.23, 0.17 + y, 0.54, 0.06, hat)
+        rect(0.32, 0.23 + y, 0.36, 0.18, skin)
+        rect(0.6, 0.29 + y, 0.05, 0.05, eye)
+        rect(0.35, 0.42 + y, 0.3, 0.12, shirt)
+        rect(0.26, 0.42 + arm_offset + y, 0.08, 0.22, shirt)
+        rect(0.66, 0.42 - arm_offset + y, 0.08, 0.22, shirt)
+        rect(0.32, 0.54 + y, 0.36, 0.16, overalls)
+        rect(0.39, 0.56 + y, 0.06, 0.14, shirt)
+        rect(0.55, 0.56 + y, 0.06, 0.14, shirt)
+        rect(0.34, 0.7 + leg_offset + y, 0.12, 0.16, boots)
+        rect(0.54, 0.7 - leg_offset + y, 0.12, 0.16, boots)
 
     def _build_sprite(
         self,
@@ -458,9 +464,11 @@ class Renderer:
         frame: int,
         facing: int,
     ) -> pygame.Surface | None:
-        base_frame = 18 if character.player_id == "player2" else 8
+        base_frame = 8 if character.join_index % 2 == 0 else 17
         if state == "jump":
             frame_index = base_frame + 5
+        elif state == "duck":
+            frame_index = base_frame + 6
         elif state == "walk":
             frame_index = base_frame + 1 + frame
         else:
