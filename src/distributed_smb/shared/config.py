@@ -8,7 +8,11 @@ CLIENT_UDP_PORT = 50011
 UDP_MAX_PACKET_SIZE = 65535
 DEFAULT_PACKET_DROP_RATE = 0.0
 HOST_PLAYER_ID = "player1"
-CLIENT_PLAYER_ID = "player2"
+
+
+def player_id_for(join_index: int) -> str:
+    """Return the canonical player ID for the given lobby join order (0-based)."""
+    return f"player{join_index + 1}"
 
 # Lobby WebSocket server
 LOBBY_WS_PORT = 50002

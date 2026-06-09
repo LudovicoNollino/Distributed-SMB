@@ -10,7 +10,7 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from distributed_smb.network.serializer import Serializer
-from distributed_smb.shared.config import LOBBY_WS_PATH, LOBBY_WS_PORT
+from distributed_smb.shared.config import LOBBY_WS_PATH, LOBBY_WS_PORT, player_id_for
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.messages.session import (
     GameStart,
@@ -46,7 +46,7 @@ class LobbyManager:
         """Register the host as the first participant. Returns (session_id, join_index=0)."""
         session_id = uuid.uuid4().hex[:8]
         entry = {
-            "player_id": player_id,
+            "player_id": player_id_for(0),
             "host": host,
             "udp_port": udp_port,
             "join_index": 0,
@@ -65,7 +65,7 @@ class LobbyManager:
         record = self._sessions[session_id]
         join_index = record.next_join_index
         entry = {
-            "player_id": player_id,
+            "player_id": player_id_for(join_index),
             "host": host,
             "udp_port": udp_port,
             "join_index": join_index,
