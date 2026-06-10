@@ -28,6 +28,12 @@ hidden_imports = [
     "fastapi",
     "websockets",
     "httpx",
+    # presentation.app is loaded dynamically via importlib by NodeController.run(),
+    # so PyInstaller's static analysis can't discover it (and its dependencies)
+    # unless listed explicitly here.
+    "distributed_smb.presentation.app",
+    "distributed_smb.presentation.renderer",
+    "distributed_smb.presentation.input_handler",
 ]
 
 a = Analysis(
