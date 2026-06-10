@@ -1,0 +1,97 @@
+name: Build Game Client
+
+"on":
+  workflow_dispatch:
+
+jobs:
+  docker-images:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build lobby image
+        run: docker build -f Dockerfile.lobby -t distributed-smb-lobby .
+
+      - name: Build game-events image
+        run: docker build -f Dockerfile.gameevents -t distributed-smb-gameevents .
+
+      - name: Save images
+        run: |
+          mkdir -p docker-images
+          docker save distributed-smb-lobby | gzip > docker-images/smb-lobby.tar.gz
+          docker save distributed-smb-gameevents | gzip > docker-images/smb-gameevents.tar.gz
+
+      - name: Upload Docker images
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: docker-images/
+          retention-days: 3
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: docker-images
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: smb-game-linux
+            binary_name: smb-game
+            zip_name: smb-game-linux.zip
+            setup_script: setup.sh
+          - os: windows-latest
+            artifact_name: smb-game-windows
+            binary_name: smb-game.exe
+            zip_name: smb-game-windows.zip
+            setup_script: setup.bat
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Install PyInstaller
+        run: poetry run pip install pyinstaller
+
+      - name: Build executable
+        run: poetry run pyinstaller main.spec
+
+      - name: Download Docker images
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: bundle
+
+      - name: Assemble bundle (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cp "dist/${{ matrix.binary_name }}" bundle/
+          cp "${{ matrix.setup_script }}" bundle/
+          chmod +x "bundle/${{ matrix.binary_name }}" "bundle/${{ matrix.setup_script }}"
+          cd bundle
+          zip -r "../${{ matrix.zip_name }}" .
+
+      - name: Assemble bundle (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Copy-Item "dist/${{ matrix.binary_name }}" bundle/
+          Copy-Item "${{ matrix.setup_script }}" bundle/
+          Compress-Archive -Path "bundle/*" -DestinationPath "${{ matrix.zip_name }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.zip_name }}
+          retention-days: 3
