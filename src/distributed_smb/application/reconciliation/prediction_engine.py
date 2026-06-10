@@ -18,6 +18,7 @@ class InputHistoryEntry:
     sequence_number: int
     input_state: InputState
     predicted_state_snapshot: WorldState
+    dt: float = TICK_INTERVAL
 
 
 class InputHistoryBuffer:
@@ -26,7 +27,11 @@ class InputHistoryBuffer:
         self._entries: Deque[InputHistoryEntry] = deque(maxlen=capacity)
 
     def push(
-        self, sequence_number: int, input_state: InputState, predicted_state_snapshot: WorldState
+        self,
+        sequence_number: int,
+        input_state: InputState,
+        predicted_state_snapshot: WorldState,
+        dt: float = TICK_INTERVAL,
     ) -> None:
         snapshot = deepcopy(predicted_state_snapshot)
         self._entries.append(
@@ -34,6 +39,7 @@ class InputHistoryBuffer:
                 sequence_number=sequence_number,
                 input_state=input_state,
                 predicted_state_snapshot=snapshot,
+                dt=dt,
             )
         )
 
@@ -59,9 +65,9 @@ class PredictionEngine:
         self.local_player_id = local_player_id
         self.buffer = InputHistoryBuffer(capacity=history_capacity)
 
-    def predict(self, input_state: InputState) -> None:
+    def predict(self, input_state: InputState, dt: float = TICK_INTERVAL) -> None:
         next_seq = self.engine.world_state.sequence_number + 1
-        self.buffer.push(next_seq, input_state, self.engine.world_state)
+        self.buffer.push(next_seq, input_state, self.engine.world_state, dt)
 
     def reconcile(self, authoritative_snapshot: WorldStateSnapshot) -> None:
         world_state = authoritative_snapshot.world_state
@@ -90,5 +96,5 @@ class PredictionEngine:
 
     def _replay_pending(self, pending_inputs: list[InputHistoryEntry]) -> None:
         for entry in pending_inputs:
-            self.engine.tick(TICK_INTERVAL, {self.local_player_id: entry.input_state})
+            self.engine.tick(entry.dt, {self.local_player_id: entry.input_state})
             entry.predicted_state_snapshot = deepcopy(self.engine.world_state)

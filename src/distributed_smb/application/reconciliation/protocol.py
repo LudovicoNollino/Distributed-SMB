@@ -15,12 +15,14 @@ from distributed_smb.shared.messages.sync import WorldStateSnapshot
 class PredictionEngineProtocol(Protocol):
     """Encapsulates client-side prediction, input buffering, and reconciliation."""
 
-    def predict(self, input_state: InputState) -> None:
-        """Record the input and snapshot the current engine state before the tick.
+    def predict(self, input_state: InputState, dt: float) -> None:
+        """Record the input, dt and snapshot the current engine state before the tick.
 
         NOTE: does NOT call engine.tick() — the caller is responsible for
         ticking the engine after this call. This avoids double-tick when
-        the real implementation is wired in.
+        the real implementation is wired in. dt is recorded so that
+        reconcile() can replay this input with the same step size used
+        for the original live tick.
         """
         ...
 

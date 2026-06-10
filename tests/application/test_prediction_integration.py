@@ -49,7 +49,7 @@ class _SpyPredictionEngine:
         self.predict_calls: list[InputState] = []
         self.reconcile_calls: list[WorldStateSnapshot] = []
 
-    def predict(self, input_state: InputState) -> None:
+    def predict(self, input_state: InputState, dt: float) -> None:
         self.predict_calls.append(input_state)
 
     def reconcile(self, authoritative_snapshot: WorldStateSnapshot) -> None:

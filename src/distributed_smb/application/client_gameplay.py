@@ -13,7 +13,7 @@ class ClientGameplayMixin:
     def _process_client_frame(self, dt: float, local_input: InputState) -> object:
         """Run one client frame: send input, predict, tick, reconcile, drain events."""
         self._send_input_packet(local_input)
-        self.prediction_engine.predict(local_input)
+        self.prediction_engine.predict(local_input, dt)
         self.engine.tick(dt, {self.local_player_id: local_input})
         local_visual_state = self.engine.world_state.get_player(self.local_player_id)
         self.engine.events.clear()
