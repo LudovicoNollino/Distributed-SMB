@@ -101,12 +101,17 @@ PREDICTION_LEAD_EWMA_ALPHA: float = 0.01
 # the lead bounded over long sessions.
 PREDICTION_LEAD_DRIFT_TOLERANCE: float = 3.0
 
-# RECONCILE_MAX_GLIDE_PX: maximum extra pixels per frame used to absorb a
-# reconciliation correction, on top of the normal predicted movement. Bounds
-# how much a single large correction (e.g. a jump-timing mismatch) can affect
-# the visible speed of the local player; bigger corrections simply take more
-# frames to fully absorb instead of producing a bigger glide.
-RECONCILE_MAX_GLIDE_PX: float = 1.5
+# RECONCILE_GLIDE_RATE: fraction of the outstanding visual reconciliation
+# error absorbed per frame. Combined with RECONCILE_MAX_GLIDE_PX below, small
+# errors (a few px, the normal one-tick prediction jitter) resolve in 1-2
+# frames, while large errors (a jump-timing mismatch, tens of px) resolve in
+# a handful of frames at the capped rate instead of lingering for ~1s.
+RECONCILE_GLIDE_RATE: float = 0.3
+
+# RECONCILE_MAX_GLIDE_PX: hard cap, in pixels per frame, on how much of the
+# outstanding error is absorbed in a single frame. Bounds the worst-case
+# visible jolt for very large corrections regardless of their size.
+RECONCILE_MAX_GLIDE_PX: float = 8.0
 
 # ARTIFICIAL_LATENCY_MS: one-way delay injected by UdpHandler on outgoing
 # packets. Use only for local testing of reconciliation behaviour; must be

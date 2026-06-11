@@ -167,6 +167,7 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
                     engine=self.engine,
                     local_player_id=self.local_player_id,
                     history_capacity=INPUT_HISTORY_SIZE,
+                    time_provider=self.time_provider,
                 )
             if self.shadow_copy_factory is NoopShadowCopy:
                 self.shadow_copy_factory = lambda: InterpolatedShadowCopy(

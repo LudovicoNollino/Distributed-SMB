@@ -6,6 +6,7 @@ from copy import deepcopy
 from distributed_smb.shared.config import (
     PREDICTION_LEAD_DRIFT_TOLERANCE,
     PREDICTION_LEAD_EWMA_ALPHA,
+    RECONCILE_GLIDE_RATE,
     RECONCILE_MAX_GLIDE_PX,
 )
 from distributed_smb.shared.input import InputState
@@ -63,14 +64,14 @@ class ClientGameplayMixin:
 
         if deviation > PREDICTION_LEAD_DRIFT_TOLERANCE:
             self.pending_tick_adjustment = -1
-            LOGGER.debug(
+            LOGGER.info(
                 "prediction lead drift: pending=%d baseline=%.2f -> skipping next tick",
                 pending,
                 baseline,
             )
         elif deviation < -PREDICTION_LEAD_DRIFT_TOLERANCE:
             self.pending_tick_adjustment = 1
-            LOGGER.debug(
+            LOGGER.info(
                 "prediction lead drift: pending=%d baseline=%.2f -> double-ticking next frame",
                 pending,
                 baseline,
@@ -85,10 +86,13 @@ class ClientGameplayMixin:
 
         reconcile() may have moved the local player (rollback + replay). Render
         a position that continues smoothly from last frame and closes the
-        accumulated error toward the authoritative position at a fixed rate
-        (RECONCILE_MAX_GLIDE_PX per frame), so a single large correction never
-        produces a bigger visual jolt than a small one — it just takes longer
-        to fully resolve.
+        accumulated error toward the authoritative position at a rate
+        proportional to the outstanding error (RECONCILE_GLIDE_RATE), capped
+        at RECONCILE_MAX_GLIDE_PX per frame. Small errors (a few px of normal
+        prediction jitter) resolve in 1-2 frames; large errors (a jump-timing
+        mismatch, tens of px) resolve in a handful of frames at the capped
+        rate instead of lingering for a full second, which would let the
+        backlog pile up if corrections recur faster than that.
         """
         player = self.engine.world_state.get_player(self.local_player_id)
         if player is None or pre_reconcile_pos is None:
@@ -100,8 +104,8 @@ class ClientGameplayMixin:
         offset_x += correction_x
         offset_y += correction_y
 
-        glide_x = max(-RECONCILE_MAX_GLIDE_PX, min(RECONCILE_MAX_GLIDE_PX, offset_x))
-        glide_y = max(-RECONCILE_MAX_GLIDE_PX, min(RECONCILE_MAX_GLIDE_PX, offset_y))
+        glide_x = self._glide_step(offset_x)
+        glide_y = self._glide_step(offset_y)
         offset_x -= glide_x
         offset_y -= glide_y
         self.visual_correction_offset = (offset_x, offset_y)
@@ -110,6 +114,11 @@ class ClientGameplayMixin:
         visual_player.x -= offset_x
         visual_player.y -= offset_y
         return visual_player
+
+    @staticmethod
+    def _glide_step(offset: float) -> float:
+        step = offset * RECONCILE_GLIDE_RATE
+        return max(-RECONCILE_MAX_GLIDE_PX, min(RECONCILE_MAX_GLIDE_PX, step))
 
     def _drain_snapshot_packets(self) -> None:
         """Poll incoming snapshots, reconcile predicted state, update shadow copies."""
