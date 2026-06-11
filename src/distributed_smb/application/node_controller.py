@@ -121,6 +121,8 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     use_discovery: bool = False
     time_provider: Callable[[], float] = field(default_factory=lambda: time.monotonic)
     visual_correction_offset: tuple[float, float] = (0.0, 0.0)
+    prediction_lead_baseline: float = 0.0
+    pending_tick_adjustment: int = 0
 
     def __post_init__(self) -> None:
         if isinstance(self.prediction_engine, NoopPredictionEngine):

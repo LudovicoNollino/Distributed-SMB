@@ -58,6 +58,9 @@ class _SpyPredictionEngine:
     def should_rollback(self, predicted, authoritative) -> bool:
         return False
 
+    def pending_count(self) -> int:
+        return 0
+
 
 def _make_snapshot_payload(nc: NodeController, seq: int = 1) -> bytes:
     return Serializer().encode_message(

@@ -138,6 +138,9 @@ class PredictionEngine:
 
         return distance > DIVERGENCE_THRESHOLD
 
+    def pending_count(self) -> int:
+        return len(self.buffer.get_unacknowledged())
+
     def _replay_pending(self, pending_inputs: list[InputHistoryEntry]) -> None:
         for entry in pending_inputs:
             self.engine.tick(entry.dt, {self.local_player_id: entry.input_state})

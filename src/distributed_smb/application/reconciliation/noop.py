@@ -32,3 +32,6 @@ class NoopPredictionEngine:
         authoritative: tuple[float, float],
     ) -> bool:
         return False
+
+    def pending_count(self) -> int:
+        return 0

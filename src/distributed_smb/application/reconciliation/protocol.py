@@ -41,3 +41,7 @@ class PredictionEngineProtocol(Protocol):
     ) -> bool:
         """Return True if euclidean distance between positions exceeds the threshold."""
         ...
+
+    def pending_count(self) -> int:
+        """Return the number of unacknowledged predicted inputs still buffered."""
+        ...

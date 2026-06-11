@@ -87,11 +87,26 @@ INPUT_HISTORY_SIZE: int = 60
 # for a long time and then sends a very old authoritative snapshot.
 MAX_ROLLBACK_FRAMES: int = 30
 
-# RECONCILE_SMOOTHING_DECAY: fraction of the visual reconciliation error that
-# remains after each frame (0 < value < 1). Lower values converge faster but
-# feel snappier; higher values are smoother but lag behind the authoritative
-# position longer. 0.8 absorbs a correction in roughly 150-200ms at 60fps.
-RECONCILE_SMOOTHING_DECAY: float = 0.8
+# PREDICTION_LEAD_EWMA_ALPHA: smoothing factor for the running average of how
+# many predicted-but-unacknowledged ticks the client is ahead of the host
+# (its "prediction lead"). This average tracks the network's true round-trip
+# latency in ticks, which drifts slowly if at all.
+PREDICTION_LEAD_EWMA_ALPHA: float = 0.01
+
+# PREDICTION_LEAD_DRIFT_TOLERANCE: how many ticks the instantaneous prediction
+# lead may deviate from its running average before the client adjusts its tick
+# rate by one tick (skip a tick if running ahead, double-tick if running
+# behind). This corrects clock drift between client and host without
+# fighting the baseline lead caused by genuine round-trip latency, keeping
+# the lead bounded over long sessions.
+PREDICTION_LEAD_DRIFT_TOLERANCE: float = 3.0
+
+# RECONCILE_MAX_GLIDE_PX: maximum extra pixels per frame used to absorb a
+# reconciliation correction, on top of the normal predicted movement. Bounds
+# how much a single large correction (e.g. a jump-timing mismatch) can affect
+# the visible speed of the local player; bigger corrections simply take more
+# frames to fully absorb instead of producing a bigger glide.
+RECONCILE_MAX_GLIDE_PX: float = 1.5
 
 # ARTIFICIAL_LATENCY_MS: one-way delay injected by UdpHandler on outgoing
 # packets. Use only for local testing of reconciliation behaviour; must be
