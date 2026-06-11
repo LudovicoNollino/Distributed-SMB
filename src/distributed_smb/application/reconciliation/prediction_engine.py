@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from collections import deque
 from copy import deepcopy
@@ -11,6 +12,11 @@ from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.config import DIVERGENCE_THRESHOLD, TICK_INTERVAL
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
+
+LOGGER = logging.getLogger(__name__)
+
+# Reconciliation jumps below this (px) are imperceptible and not logged.
+RECONCILE_LOG_THRESHOLD = 1.0
 
 
 @dataclass(slots=True)
@@ -71,6 +77,12 @@ class PredictionEngine:
 
     def reconcile(self, authoritative_snapshot: WorldStateSnapshot) -> None:
         world_state = authoritative_snapshot.world_state
+        client_seq_before = self.engine.world_state.sequence_number
+        predicted_player = self.engine.world_state.get_player(self.local_player_id)
+        predicted_pos = (
+            (predicted_player.x, predicted_player.y) if predicted_player else None
+        )
+
         self.buffer.acknowledge(world_state.sequence_number)
         pending_inputs = self.buffer.get_unacknowledged()
         # Preserve local environment: blocks/power-ups/gates are managed exclusively
@@ -80,6 +92,38 @@ class PredictionEngine:
         self.engine.world_state.environment = local_env
         if pending_inputs:
             self._replay_pending(pending_inputs)
+
+        self._log_correction(
+            client_seq_before, world_state.sequence_number, pending_inputs, predicted_pos
+        )
+
+    def _log_correction(
+        self,
+        client_seq_before: int,
+        host_seq: int,
+        pending_inputs: list[InputHistoryEntry],
+        predicted_pos: tuple[float, float] | None,
+    ) -> None:
+        if predicted_pos is None:
+            return
+        reconciled_player = self.engine.world_state.get_player(self.local_player_id)
+        if reconciled_player is None:
+            return
+        delta_x = reconciled_player.x - predicted_pos[0]
+        delta_y = reconciled_player.y - predicted_pos[1]
+        distance = math.hypot(delta_x, delta_y)
+        if distance < RECONCILE_LOG_THRESHOLD:
+            return
+        LOGGER.info(
+            "reconcile correction: %.1fpx (dx=%.1f dy=%.1f) "
+            "client_seq=%d host_seq=%d pending_replayed=%d",
+            distance,
+            delta_x,
+            delta_y,
+            client_seq_before,
+            host_seq,
+            len(pending_inputs),
+        )
 
     def should_rollback(self, predicted: WorldState, authoritative: WorldState) -> bool:
         predicted_player = predicted.get_player(self.local_player_id)
