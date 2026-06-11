@@ -87,6 +87,12 @@ INPUT_HISTORY_SIZE: int = 60
 # for a long time and then sends a very old authoritative snapshot.
 MAX_ROLLBACK_FRAMES: int = 30
 
+# RECONCILE_SMOOTHING_DECAY: fraction of the visual reconciliation error that
+# remains after each frame (0 < value < 1). Lower values converge faster but
+# feel snappier; higher values are smoother but lag behind the authoritative
+# position longer. 0.8 absorbs a correction in roughly 150-200ms at 60fps.
+RECONCILE_SMOOTHING_DECAY: float = 0.8
+
 # ARTIFICIAL_LATENCY_MS: one-way delay injected by UdpHandler on outgoing
 # packets. Use only for local testing of reconciliation behaviour; must be
 # 0 in production.
