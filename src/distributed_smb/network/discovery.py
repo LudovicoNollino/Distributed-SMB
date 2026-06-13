@@ -9,6 +9,19 @@ from distributed_smb.shared.config import DISCOVERY_UDP_PORT
 LOGGER = logging.getLogger(__name__)
 
 
+def _local_ipv4_addresses() -> list[str]:
+    """Return all non-loopback IPv4 addresses bound to local interfaces."""
+    addresses: set[str] = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127."):
+                addresses.add(ip)
+    except OSError:
+        pass
+    return list(addresses)
+
+
 class DiscoveryService:
     def __init__(self) -> None:
         self._running = False
@@ -56,16 +69,32 @@ class DiscoveryService:
         self._thread.start()
 
     def discover(self, session_id: str, timeout: float = 5.0) -> tuple[str, int]:
-        """Broadcast a discovery query and return (host_ip, lobby_port)."""
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            sock.settimeout(timeout)
-            query = f"WHO {session_id}".encode()
+        """Broadcast a discovery query and return (host_ip, lobby_port).
+
+        The query is sent from every local IPv4 interface, not just the one
+        chosen by the default route. This avoids losing the broadcast on
+        machines where a virtual adapter (e.g. Docker Desktop's vEthernet)
+        has a lower-metric default route than the real LAN NIC.
+        """
+        query = f"WHO {session_id}".encode()
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as recv_sock:
+            recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            recv_sock.bind(("0.0.0.0", 0))
+            recv_sock.settimeout(timeout)
+
             LOGGER.info(
                 "[discovery] broadcasting WHO %s on port %d", session_id, DISCOVERY_UDP_PORT
             )
-            sock.sendto(query, ("255.255.255.255", DISCOVERY_UDP_PORT))
-            data, (host_ip, _) = sock.recvfrom(64)
+            for local_ip in _local_ipv4_addresses():
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as send_sock:
+                        send_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                        send_sock.bind((local_ip, 0))
+                        send_sock.sendto(query, ("255.255.255.255", DISCOVERY_UDP_PORT))
+                except OSError:
+                    continue
+
+            data, (host_ip, _) = recv_sock.recvfrom(64)
             lobby_port = int(data.decode())
             LOGGER.info("[discovery] found host at %s, lobby port %d", host_ip, lobby_port)
             return host_ip, lobby_port
