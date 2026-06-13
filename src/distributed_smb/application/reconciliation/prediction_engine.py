@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 import math
 import time
@@ -16,12 +14,8 @@ from distributed_smb.shared.messages.sync import WorldStateSnapshot
 
 LOGGER = logging.getLogger(__name__)
 
-# Reconciliation jumps below this (px) are imperceptible and not logged.
 RECONCILE_LOG_THRESHOLD = 1.0
 
-# Corrections at or above this (px) are logged with extra diagnostics
-# (vy before/after, whether a jump input was replayed) to help track down
-# large jump-timing divergences between client and host.
 RECONCILE_LARGE_CORRECTION_THRESHOLD = 25.0
 
 
@@ -102,17 +96,13 @@ class PredictionEngine:
         world_state = authoritative_snapshot.world_state
         client_seq_before = self.engine.world_state.sequence_number
         predicted_player = self.engine.world_state.get_player(self.local_player_id)
-        predicted_pos = (
-            (predicted_player.x, predicted_player.y) if predicted_player else None
-        )
+        predicted_pos = (predicted_player.x, predicted_player.y) if predicted_player else None
         predicted_vy = predicted_player.vy if predicted_player else None
         authoritative_player = world_state.get_player(self.local_player_id)
         authoritative_vy = authoritative_player.vy if authoritative_player else None
 
         last_acknowledged = self.buffer.acknowledge(world_state.sequence_number)
         pending_inputs = self.buffer.get_unacknowledged()
-        # Preserve local environment: blocks/power-ups/gates are managed exclusively
-        # by WS events — the UDP snapshot must not override them.
         local_env = self.engine.world_state.environment
         self.engine.world_state = deepcopy(world_state)
         self.engine.world_state.environment = local_env

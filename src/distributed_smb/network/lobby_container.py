@@ -16,18 +16,28 @@ class LobbyContainerManager:
         self.stop()
         subprocess.run(
             [
-                "docker", "run", "-d", "--rm",
-                "-p", f"{LOBBY_WS_PORT}:{LOBBY_WS_PORT}",
-                "--name", _NAME_LOBBY,
+                "docker",
+                "run",
+                "-d",
+                "--rm",
+                "-p",
+                f"{LOBBY_WS_PORT}:{LOBBY_WS_PORT}",
+                "--name",
+                _NAME_LOBBY,
                 _IMAGE_LOBBY,
             ],
             check=True,
         )
         subprocess.run(
             [
-                "docker", "run", "-d", "--rm",
-                "-p", f"{GAME_EVENT_WS_PORT}:{GAME_EVENT_WS_PORT}",
-                "--name", _NAME_GAMEEVENTS,
+                "docker",
+                "run",
+                "-d",
+                "--rm",
+                "-p",
+                f"{GAME_EVENT_WS_PORT}:{GAME_EVENT_WS_PORT}",
+                "--name",
+                _NAME_GAMEEVENTS,
                 _IMAGE_GAMEEVENTS,
             ],
             check=True,

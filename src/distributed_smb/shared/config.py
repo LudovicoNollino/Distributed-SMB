@@ -1,5 +1,3 @@
-"""Project-wide configuration defaults."""
-
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_UDP_PORT = 50000
 DEFAULT_TCP_PORT = 50001
@@ -13,6 +11,7 @@ HOST_PLAYER_ID = "player1"
 def player_id_for(join_index: int) -> str:
     """Return the canonical player ID for the given lobby join order (0-based)."""
     return f"player{join_index + 1}"
+
 
 # Lobby WebSocket server
 LOBBY_WS_PORT = 50002
@@ -58,19 +57,6 @@ PLAYER_HEIGHT = int(50 * WORLD_SCALE)
 
 MAX_PLAYERS = 4
 
-# ---------------------------------------------------------------------------
-# M5 — client-side prediction and reconciliation
-# ---------------------------------------------------------------------------
-#
-# LAN tuning guide (one-way latency measured with ping):
-#
-#   Condition          RTT        DIVERGENCE_THRESHOLD   ARTIFICIAL_LATENCY_MS
-#   -----------------------------------------------------------------------
-#   Stable LAN         1–5 ms     10.0 px                0   (disabled)
-#   Average LAN        5–20 ms    20.0 px  ← default      0   (disabled)
-#   Noisy LAN         20–50 ms    35.0 px                0   (disabled)
-#   Simulated lag     any         20.0 px                50–200 ms (testing only)
-#
 # DIVERGENCE_THRESHOLD: positional error (px) above which the client rolls
 # back to the authoritative state and replays buffered inputs. Lower values
 # give a more authoritative feel but trigger more rollbacks on a noisy link;
@@ -87,18 +73,26 @@ INPUT_HISTORY_SIZE: int = 60
 # for a long time and then sends a very old authoritative snapshot.
 MAX_ROLLBACK_FRAMES: int = 30
 
-# PREDICTION_LEAD_EWMA_ALPHA: smoothing factor for the running average of how
-# many predicted-but-unacknowledged ticks the client is ahead of the host
-# (its "prediction lead"). This average tracks the network's true round-trip
-# latency in ticks, which drifts slowly if at all.
+# PREDICTION_LEAD_EWMA_ALPHA: smoothing factor used during the calibration
+# window (see PREDICTION_LEAD_CALIBRATION_FRAMES) to settle the prediction
+# lead baseline onto the connection's true round-trip latency in ticks.
 PREDICTION_LEAD_EWMA_ALPHA: float = 0.01
 
+# PREDICTION_LEAD_CALIBRATION_FRAMES: number of frames during which the
+# prediction lead baseline is still adjusted via EWMA. After this window the
+# baseline is frozen. Freezing is required because client and host tick
+# loops run at very slightly different real-world rates (~1% in LAN tests);
+# if the baseline kept tracking the instantaneous lead via EWMA, it would
+# drift upward together with the lead instead of correcting it, leaving
+# `pending` to grow unbounded over a long session.
+PREDICTION_LEAD_CALIBRATION_FRAMES: int = 120
+
 # PREDICTION_LEAD_DRIFT_TOLERANCE: how many ticks the instantaneous prediction
-# lead may deviate from its running average before the client adjusts its tick
-# rate by one tick (skip a tick if running ahead, double-tick if running
-# behind). This corrects clock drift between client and host without
-# fighting the baseline lead caused by genuine round-trip latency, keeping
-# the lead bounded over long sessions.
+# lead may deviate from its (frozen, post-calibration) baseline before the
+# client adjusts its tick rate by one tick (skip a tick if running ahead,
+# double-tick if running behind). This corrects clock drift between client
+# and host, keeping the lead bounded over long sessions instead of drifting
+# away from the baseline established during calibration.
 PREDICTION_LEAD_DRIFT_TOLERANCE: float = 3.0
 
 # RECONCILE_GLIDE_RATE: fraction of the outstanding visual reconciliation

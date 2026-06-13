@@ -53,6 +53,7 @@ from distributed_smb.shared.config import (
     HOST_UDP_PORT,
     INPUT_HISTORY_SIZE,
     LOBBY_WS_PORT,
+    PREDICTION_LEAD_CALIBRATION_FRAMES,
     TICK_INTERVAL,
     player_id_for,
 )
@@ -122,7 +123,14 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     time_provider: Callable[[], float] = field(default_factory=lambda: time.monotonic)
     visual_correction_offset: tuple[float, float] = (0.0, 0.0)
     prediction_lead_baseline: float = 0.0
+    prediction_lead_calibration_remaining: int = PREDICTION_LEAD_CALIBRATION_FRAMES
     pending_tick_adjustment: int = 0
+    host_last_frame_at: float | None = None
+    host_frame_intervals: list[float] = field(default_factory=list)
+    host_input_packets_window: int = 0
+    host_last_payload_bytes: int = 0
+    client_last_frame_at: float | None = None
+    client_frame_intervals: list[float] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if isinstance(self.prediction_engine, NoopPredictionEngine):

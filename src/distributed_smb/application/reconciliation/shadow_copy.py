@@ -4,9 +4,6 @@ ShadowCopy smooths the visual representation of remote entities between
 authoritative snapshots. Each remote player gets its own ShadowCopy
 instance, initialised after lobby and updated on every snapshot arrival.
 
-NoopShadowCopy stays available for tests and dependency injection, while
-InterpolatedShadowCopy adapts the domain-layer implementation used by the
-runtime client.
 """
 
 import time
@@ -23,14 +20,12 @@ class ShadowCopyProtocol(Protocol):
 
     def update(self, state: CharacterState) -> None:
         """Record a new authoritative state from an incoming snapshot."""
-        ...
 
     def get_display_state(self) -> CharacterState | None:
         """Return the state to render, potentially interpolated or extrapolated.
 
         Returns None if no snapshot has arrived yet for this entity.
         """
-        ...
 
 
 class NoopShadowCopy:

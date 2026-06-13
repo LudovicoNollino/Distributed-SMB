@@ -1,12 +1,4 @@
-"""No-op implementation of PredictionEngineProtocol.
-
-Used as default in NodeController before Persona 1 delivers the real
-PredictionEngine. Behavioural contract: identical to M4 — snapshot is
-applied directly, no rollback, no input replay.
-
-NodeController.__post_init__ sets _engine so reconcile() can apply
-the snapshot without a separate engine reference at construction time.
-"""
+"""No-op implementation of PredictionEngineProtocol."""
 
 from distributed_smb.shared.config import TICK_INTERVAL
 from distributed_smb.shared.input import InputState

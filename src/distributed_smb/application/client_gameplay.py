@@ -1,6 +1,7 @@
 """Client-side frame synchronisation mixin."""
 
 import logging
+import time
 from copy import deepcopy
 
 from distributed_smb.shared.config import (
@@ -15,10 +16,14 @@ from distributed_smb.shared.messages.sync import WorldStateSnapshot
 
 LOGGER = logging.getLogger(__name__)
 
+# Number of client frames between diagnostic frame-timing log lines.
+CLIENT_DIAG_LOG_INTERVAL = 120
+
 
 class ClientGameplayMixin:
     def _process_client_frame(self, dt: float, local_input: InputState) -> object:
         """Run one client frame: send input, predict, tick, reconcile, drain events."""
+        self._record_client_frame_interval()
         self._send_input_packet(local_input)
         self._run_predicted_ticks(dt, local_input)
         pre_reconcile_player = self.engine.world_state.get_player(self.local_player_id)
@@ -35,13 +40,7 @@ class ClientGameplayMixin:
         return self._build_visual_world_state(local_visual_state=local_visual_state)
 
     def _run_predicted_ticks(self, dt: float, local_input: InputState) -> None:
-        """Predict and tick the engine, applying any pending drift correction.
-
-        Normally runs exactly one predict+tick cycle. If the prediction lead
-        has drifted above its baseline, this frame is skipped (0 ticks) to let
-        the host catch up. If it has drifted below, an extra tick is run to
-        catch up with the host. Either way the adjustment is consumed here.
-        """
+        """Predict and tick the engine, applying any pending drift correction."""
         ticks = 1 + self.pending_tick_adjustment
         self.pending_tick_adjustment = 0
         for _ in range(ticks):
@@ -53,10 +52,15 @@ class ClientGameplayMixin:
 
         The prediction lead (number of unacknowledged predicted ticks) tracks
         the round-trip latency in ticks and is expected to stay roughly
-        constant. If client and host clocks drift apart, the lead grows or
-        shrinks unbounded over a long session. Compare the instantaneous lead
-        to its slow-moving baseline and schedule a one-tick correction for the
-        next frame if it has drifted beyond tolerance.
+        constant. Client and host tick loops run at very slightly different
+        real-world rates, so the lead drifts steadily if left uncorrected.
+
+        During the first PREDICTION_LEAD_CALIBRATION_FRAMES frames, the
+        baseline is settled onto the connection's true lead via EWMA. After
+        that it is frozen: deviations from this fixed baseline trigger a
+        one-tick correction (skip a tick if running ahead, double-tick if
+        running behind) for the next frame, which cancels the clock-rate
+        mismatch instead of letting the baseline drift along with it.
         """
         pending = self.prediction_engine.pending_count()
         baseline = self.prediction_lead_baseline or float(pending)
@@ -76,8 +80,11 @@ class ClientGameplayMixin:
                 pending,
                 baseline,
             )
-        else:
+        elif self.prediction_lead_calibration_remaining > 0:
             baseline += (pending - baseline) * PREDICTION_LEAD_EWMA_ALPHA
+
+        if self.prediction_lead_calibration_remaining > 0:
+            self.prediction_lead_calibration_remaining -= 1
 
         self.prediction_lead_baseline = baseline
 
@@ -119,6 +126,29 @@ class ClientGameplayMixin:
     def _glide_step(offset: float) -> float:
         step = offset * RECONCILE_GLIDE_RATE
         return max(-RECONCILE_MAX_GLIDE_PX, min(RECONCILE_MAX_GLIDE_PX, step))
+
+    def _record_client_frame_interval(self) -> None:
+        """Track wall-clock time between consecutive client frames."""
+        now = time.monotonic()
+        if self.client_last_frame_at is not None:
+            self.client_frame_intervals.append(now - self.client_last_frame_at)
+        self.client_last_frame_at = now
+
+        if len(self.client_frame_intervals) < CLIENT_DIAG_LOG_INTERVAL:
+            return
+        intervals = self.client_frame_intervals
+        avg_ms = sum(intervals) / len(intervals) * 1000.0
+        min_ms = min(intervals) * 1000.0
+        max_ms = max(intervals) * 1000.0
+        LOGGER.info(
+            "client frame stats: interval_ms avg=%.2f min=%.2f max=%.2f pending=%d baseline=%.2f",
+            avg_ms,
+            min_ms,
+            max_ms,
+            self.prediction_engine.pending_count(),
+            self.prediction_lead_baseline,
+        )
+        self.client_frame_intervals.clear()
 
     def _drain_snapshot_packets(self) -> None:
         """Poll incoming snapshots, reconcile predicted state, update shadow copies."""

@@ -33,7 +33,8 @@ class DiscoveryService:
         def _listen() -> None:
             LOGGER.info(
                 "[discovery] listening on UDP :%d for session %s",
-                DISCOVERY_UDP_PORT, session_id,
+                DISCOVERY_UDP_PORT,
+                session_id,
             )
             while self._running:
                 try:
@@ -41,7 +42,9 @@ class DiscoveryService:
                     if data == query:
                         LOGGER.info(
                             "[discovery] query from %s:%d → port %d",
-                            addr[0], addr[1], lobby_port,
+                            addr[0],
+                            addr[1],
+                            lobby_port,
                         )
                         sock.sendto(response, addr)
                 except TimeoutError:
