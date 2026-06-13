@@ -4,7 +4,7 @@ name: Build Game Client
   workflow_dispatch:
   push:
     branches:
-      - ludo-m7-deploy
+      - main
 
 jobs:
   docker-images:
