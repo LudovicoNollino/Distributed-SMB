@@ -53,6 +53,12 @@ class MessageType(StrEnum):
     SESSION_JOINED = "session_joined"
     ROSTER_UPDATE = "roster_update"
 
+    # WebSocket — election and host migration
+    NEW_HOST_CLAIM = "new_host_claim"
+    ELECTION_ACK = "election_ack"
+    ELECTION_NACK = "election_nack"
+
+    # Event messages
     BLOCK_DESTROYED_MESSAGE = "block_destroyed_message"
     POWERUP_COLLECTED_MESSAGE = "powerup_collected_message"
     GATE_STATE_CHANGED_MESSAGE = "gate_state_changed_message"

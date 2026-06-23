@@ -48,6 +48,23 @@ BASE_WINDOW_HEIGHT = 480
 # Global world/presentation scale factor.
 WORLD_SCALE = 1.5
 
+# === Election and Host Failure Detection ===
+# Eventually perfect failure detector: timeout-based detection in asynchronous systems.
+# False positives possible under high latency, but rare in normal conditions.
+HOST_TIMEOUT_S = 5.0
+"""Seconds without WorldStateSnapshot (UDP) before declaring host lost."""
+
+# Staggered timer election: break ties without central coordinator.
+# Nodes with lower JoinIndex win (deterministic total ordering via JoinIndex ≈ Lamport clock).
+T_ELECTION_BASE_S = 0.5
+"""Base delay (seconds) before node self-elects as host candidate."""
+
+T_ELECTION_DELTA_S = 0.3
+"""Additional delay per JoinIndex unit: T = T_ELECTION_BASE_S + join_index * T_ELECTION_DELTA_S."""
+
+ELECTION_CLAIM_TIMEOUT_S = 2.0
+"""Timeout (seconds) waiting for NewHostClaim from lower-indexed nodes."""
+
 WINDOW_WIDTH = int(BASE_WINDOW_WIDTH * WORLD_SCALE)
 WINDOW_HEIGHT = int(BASE_WINDOW_HEIGHT * WORLD_SCALE)
 WINDOW_TITLE = "Distributed SMB"
