@@ -5,8 +5,8 @@ from distributed_smb.domain.session import (
     PeerRejoinMetadata,
     SessionInfo,
 )
-from distributed_smb.domain.session_state import SessionPhase, SessionState
 from distributed_smb.domain.world import EnvironmentalState
+from distributed_smb.shared.enums import SessionPhase
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
 
@@ -15,9 +15,7 @@ def test_session_creation():
 
     session = GameSession(session_id="abc", host_player_id="p1", roster=roster)
 
-    state = SessionState(session_info=session)
-
-    assert state.phase == SessionPhase.WAITING
+    assert session.state == SessionPhase.WAITING
 
 
 def test_session_state_transitions():
@@ -41,23 +39,23 @@ def test_session_state_transitions():
 
 
 def test_session_state_value_object_transitions():
+    """Verify GameSession handles state transitions correctly."""
     session = GameSession(session_id="abc", host_player_id="p1")
-    state = SessionState(session_info=session)
 
-    assert state.is_waiting_room is True
+    assert session.is_waiting_room is True
 
-    state.start()
+    session.start()
 
-    assert state.phase is SessionPhase.PLAYING
-    assert state.is_started is True
+    assert session.state is SessionPhase.PLAYING
+    assert session.is_started is True
 
-    state.end()
+    session.end()
 
-    assert state.phase is SessionPhase.ENDED
+    assert session.state is SessionPhase.ENDED
 
-    state.move_to_waiting_room()
+    session.move_to_waiting_room()
 
-    assert state.phase is SessionPhase.WAITING
+    assert session.state is SessionPhase.WAITING
 
 
 def test_full_flow():
