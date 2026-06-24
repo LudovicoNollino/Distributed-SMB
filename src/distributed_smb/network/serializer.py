@@ -9,6 +9,12 @@ from pydantic import ValidationError
 from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.input import InputState
+from distributed_smb.shared.messages.election import (
+    ElectionAck,
+    ElectionNack,
+    NewHostClaim,
+    ReconnectionAck,
+)
 from distributed_smb.shared.messages.gameplay import (
     BlockDestroyedMessage,
     GateStateChangedMessage,
@@ -19,13 +25,17 @@ from distributed_smb.shared.messages.gameplay import (
 )
 from distributed_smb.shared.messages.schemas import (
     BlockDestroyedMessageSchema,
+    ElectionAckSchema,
+    ElectionNackSchema,
     GameStartSchema,
     GateStateChangedMessageSchema,
     InitialStateSyncSchema,
+    NewHostClaimSchema,
     PlayerDisconnectedSchema,
     PlayerInputSchema,
     PlayerLeftSchema,
     PowerUpCollectedMessageSchema,
+    ReconnectionAckSchema,
     RosterUpdateSchema,
     SessionCreatedSchema,
     SessionCreateSchema,
@@ -59,6 +69,10 @@ WsMessage = Union[
     GateStateChangedMessage,
     PlayerLeft,
     PlayerDisconnected,
+    NewHostClaim,
+    ElectionAck,
+    ElectionNack,
+    ReconnectionAck,
 ]
 
 
@@ -213,6 +227,35 @@ class Serializer:
             if message_type == MessageType.PLAYER_DISCONNECTED:
                 validated = PlayerDisconnectedSchema(**data)
                 return PlayerDisconnected(player_id=validated.player_id)
+
+            if message_type == MessageType.NEW_HOST_CLAIM:
+                validated = NewHostClaimSchema(**data)
+                return NewHostClaim(
+                    claimer_ip=validated.claimer_ip,
+                    claimer_join_index=validated.claimer_join_index,
+                    session_id=validated.session_id,
+                )
+
+            if message_type == MessageType.ELECTION_ACK:
+                validated = ElectionAckSchema(**data)
+                return ElectionAck(from_ip=validated.from_ip, session_id=validated.session_id)
+
+            if message_type == MessageType.ELECTION_NACK:
+                validated = ElectionNackSchema(**data)
+                return ElectionNack(
+                    from_ip=validated.from_ip,
+                    session_id=validated.session_id,
+                    reason=validated.reason,
+                )
+
+            if message_type == MessageType.RECONNECTION_ACK:
+                validated = ReconnectionAckSchema(**data)
+                return ReconnectionAck(
+                    new_host_ip=validated.new_host_ip,
+                    udp_port=validated.udp_port,
+                    game_events_port=validated.game_events_port,
+                    session_id=validated.session_id,
+                )
 
             raise DeserializationError(f"Unsupported WebSocket message type: {message_type}")
 

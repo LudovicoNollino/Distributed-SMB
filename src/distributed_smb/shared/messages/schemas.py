@@ -115,3 +115,31 @@ class PlayerLeftSchema(BaseModel):
 class PlayerDisconnectedSchema(BaseModel):
     player_id: str = Field(..., min_length=1)
     message_type: str = Field(default="player_disconnected")
+
+
+class NewHostClaimSchema(BaseModel):
+    claimer_ip: str = Field(..., min_length=1)
+    claimer_join_index: int = Field(..., ge=0)
+    session_id: str = Field(..., min_length=1)
+    message_type: str = Field(default="new_host_claim")
+
+
+class ElectionAckSchema(BaseModel):
+    from_ip: str = Field(..., min_length=1)
+    session_id: str = Field(..., min_length=1)
+    message_type: str = Field(default="election_ack")
+
+
+class ElectionNackSchema(BaseModel):
+    from_ip: str = Field(..., min_length=1)
+    session_id: str = Field(..., min_length=1)
+    reason: str = Field(..., min_length=1)
+    message_type: str = Field(default="election_nack")
+
+
+class ReconnectionAckSchema(BaseModel):
+    new_host_ip: str = Field(..., min_length=1)
+    udp_port: int = Field(..., ge=1024, le=65535)
+    game_events_port: int = Field(..., ge=1024, le=65535)
+    session_id: str = Field(..., min_length=1)
+    message_type: str = Field(default="reconnection_ack")

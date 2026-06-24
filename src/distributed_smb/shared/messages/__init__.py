@@ -4,6 +4,7 @@ from distributed_smb.shared.messages.election import (
     ElectionAck,
     ElectionNack,
     NewHostClaim,
+    ReconnectionAck,
 )
 from distributed_smb.shared.messages.session import (
     GameStart,
@@ -28,4 +29,5 @@ __all__ = [
     "NewHostClaim",
     "ElectionAck",
     "ElectionNack",
+    "ReconnectionAck",
 ]

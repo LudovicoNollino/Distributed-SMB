@@ -87,3 +87,35 @@ class ElectionNack:
             raise MessageValidationError(f"Invalid session_id: {self.session_id}")
         if not self.reason or not isinstance(self.reason, str):
             raise MessageValidationError(f"Invalid reason: {self.reason}")
+
+
+@dataclass(slots=True)
+class ReconnectionAck:
+    """Sent by the newly promoted host to each surviving client.
+
+    Carries the connection details clients need to resume the session:
+    the new host's IP, the UDP port to send PlayerInputPackets to, and
+    the WebSocket port for game events.
+
+    Attributes:
+        new_host_ip: IP address of the newly elected host.
+        udp_port: UDP port where the new host listens for PlayerInputPackets.
+        game_events_port: WebSocket port for the GameEventServer on the new host.
+        session_id: Session identifier to prevent cross-session confusion.
+    """
+
+    new_host_ip: str
+    udp_port: int
+    game_events_port: int
+    session_id: str
+    message_type: MessageType = field(init=False, default=MessageType.RECONNECTION_ACK)
+
+    def __post_init__(self):
+        if not self.new_host_ip or not isinstance(self.new_host_ip, str):
+            raise MessageValidationError(f"Invalid new_host_ip: {self.new_host_ip}")
+        if not (1024 <= self.udp_port <= 65535):
+            raise MessageValidationError(f"udp_port out of range: {self.udp_port}")
+        if not (1024 <= self.game_events_port <= 65535):
+            raise MessageValidationError(f"game_events_port out of range: {self.game_events_port}")
+        if not self.session_id or not isinstance(self.session_id, str):
+            raise MessageValidationError(f"Invalid session_id: {self.session_id}")
