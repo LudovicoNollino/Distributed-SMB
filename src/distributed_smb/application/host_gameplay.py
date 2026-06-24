@@ -13,7 +13,28 @@ LOGGER = logging.getLogger(__name__)
 HOST_DIAG_LOG_INTERVAL = 120
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 class HostGameplayMixin:
+    def bootstrap_from_snapshot(self, snapshot: WorldStateSnapshot) -> None:
+        """Apply an incoming snapshot as the authoritative starting state.
+
+        Called by ElectionMixin._promote_to_host() after the election, using
+        the last snapshot stored in env_state_buffer. This preserves the
+        EnvironmentalState (destroyed blocks, collected power-ups) from the
+        moment before the old host crashed.
+
+        The snapshot's world_state is already a decoded WorldState object
+        (the serializer decodes it before constructing WorldStateSnapshot),
+        so we assign it directly to the engine without re-decoding.
+        """
+        self.engine.world_state = snapshot.world_state
+        self.last_snapshot_sequence = snapshot.sequence_number
+        LOGGER.info(
+            "bootstrapped world state from snapshot seq=%d", snapshot.sequence_number
+        )
+
     def _drain_remote_input_packets(self) -> int:
         """Poll incoming client input packets and cache the latest valid ones.
 

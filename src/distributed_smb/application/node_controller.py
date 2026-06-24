@@ -9,6 +9,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from distributed_smb.application.client_gameplay import ClientGameplayMixin
+from distributed_smb.application.election import (
+    ElectionCoordinator,
+    EnvironmentalStateBuffer,
+    HostTimeoutWatcher,
+)
 from distributed_smb.application.game_event_dispatcher import GameEventMixin
 from distributed_smb.application.host_gameplay import HostGameplayMixin
 from distributed_smb.application.lobby_coordinator import (
@@ -131,6 +136,13 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     host_last_payload_bytes: int = 0
     client_last_frame_at: float | None = None
     client_frame_intervals: list[float] = field(default_factory=list)
+    # --- M8: fault tolerance ---
+    join_index: int = 0
+    election_coordinator: ElectionCoordinator | None = None
+    timeout_watcher: HostTimeoutWatcher | None = None
+    env_state_buffer: EnvironmentalStateBuffer | None = None
+    election_triggered: bool = False
+    reconnected: bool = False
 
     def __post_init__(self) -> None:
         if isinstance(self.prediction_engine, NoopPredictionEngine):

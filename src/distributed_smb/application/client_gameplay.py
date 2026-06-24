@@ -4,13 +4,25 @@ import logging
 import time
 from copy import deepcopy
 
+from distributed_smb.application.election import (
+    ElectionCoordinator,
+    EnvironmentalStateBuffer,
+    FollowingHost,
+    HostTimeoutWatcher,
+    SelfElected,
+)
 from distributed_smb.shared.config import (
+    ELECTION_CLAIM_TIMEOUT_S,
+    HOST_TIMEOUT_S,
     PREDICTION_LEAD_DRIFT_TOLERANCE,
     PREDICTION_LEAD_EWMA_ALPHA,
     RECONCILE_GLIDE_RATE,
     RECONCILE_MAX_GLIDE_PX,
+    T_ELECTION_BASE_S,
+    T_ELECTION_DELTA_S,
 )
 from distributed_smb.shared.input import InputState
+from distributed_smb.shared.messages.election import ElectionAck, ElectionNack, ReconnectionAck
 from distributed_smb.shared.messages.gameplay import PlayerInputPacket
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
 
@@ -23,6 +35,7 @@ CLIENT_DIAG_LOG_INTERVAL = 120
 class ClientGameplayMixin:
     def _process_client_frame(self, dt: float, local_input: InputState) -> object:
         """Run one client frame: send input, predict, tick, reconcile, drain events."""
+        self._ensure_election_components()
         self._record_client_frame_interval()
         self._send_input_packet(local_input)
         self._run_predicted_ticks(dt, local_input)
@@ -35,9 +48,121 @@ class ClientGameplayMixin:
         self.engine.events.clear()
         self._drain_snapshot_packets()
         self._drain_game_events()
+        self._tick_election_state()
         self._adjust_prediction_lead()
         local_visual_state = self._smoothed_local_visual_state(pre_reconcile_pos)
         return self._build_visual_world_state(local_visual_state=local_visual_state)
+
+    # ------------------------------------------------------------------
+    # Election lifecycle
+    # ------------------------------------------------------------------
+
+    def _ensure_election_components(self) -> None:
+        """Lazy-init election components on first client frame (roster available here)."""
+        if self.election_coordinator is not None:
+            return
+        entry = self.roster.get_player(self.local_player_id)
+        if entry is not None:
+            self.join_index = entry.join_index
+        self.election_coordinator = ElectionCoordinator(
+            join_index=self.join_index,
+            my_ip=self.local_ip,
+            timeout_base_s=T_ELECTION_BASE_S,
+            timeout_delta_s=T_ELECTION_DELTA_S,
+        )
+        self.timeout_watcher = HostTimeoutWatcher(timeout_s=HOST_TIMEOUT_S)
+        self.env_state_buffer = EnvironmentalStateBuffer()
+
+    def _known_client_peers(self) -> set[str]:
+        """IPs of all surviving peers (excluding the crashed host and self)."""
+        return {
+            entry.host
+            for entry in self.roster.get_all_players()
+            if not entry.is_host and entry.player_id != self.local_player_id
+        }
+
+    def _tick_election_state(self) -> None:
+        """Check host timeout and advance the election state machine."""
+        if self.election_coordinator is None or self.timeout_watcher is None:
+            return
+
+        now = time.time()
+
+        if not self.election_triggered and self.timeout_watcher.tick(now):
+            LOGGER.warning("host timeout detected — starting election")
+            self.election_triggered = True
+            peers = self._known_client_peers()
+            self.election_coordinator.start_election(peers)
+            self.election_coordinator.set_election_timer(now)
+
+        if self.election_triggered:
+            event = self.election_coordinator.tick(now)
+            if isinstance(event, SelfElected):
+                LOGGER.info("election: self-elected as new host (ip=%s)", event.my_ip)
+                self._on_self_elected(event)
+
+    # ------------------------------------------------------------------
+    # Election event handlers (called from _drain_game_events)
+    # ------------------------------------------------------------------
+
+    def _on_new_host_claim(self, msg) -> None:
+        """Handle an incoming NewHostClaim from a peer."""
+        if self.election_coordinator is None:
+            return
+        event = self.election_coordinator.on_new_host_claim(
+            claimer_join_index=msg.claimer_join_index,
+            claimer_ip=msg.claimer_ip,
+        )
+        if isinstance(event, FollowingHost):
+            LOGGER.info(
+                "election: following new host %s (join_index=%d)",
+                event.claimer_ip,
+                event.claimer_join_index,
+            )
+        # Send ElectionAck back to claimer — Persona 2 wires game_event_broker.send_to_peer()
+        # TODO(persona2): self.game_event_broker.send_to_peer(msg.claimer_ip, ElectionAck(...))
+
+    def _on_election_ack(self, msg: ElectionAck) -> None:
+        """Quorum tracking for the self-elected node. Persona 2 (ElectionMixin) overrides."""
+        pass
+
+    def _on_election_nack(self, msg: ElectionNack) -> None:
+        """Handle rejection of our claim. Persona 2 (ElectionMixin) overrides."""
+        pass
+
+    def _on_reconnection_ack(self, ack: ReconnectionAck) -> None:
+        """Reconnect to the newly elected host after migration.
+
+        Updates the UDP destination so subsequent PlayerInputPackets reach the
+        new host. WebSocket reconnect is delegated to game_event_broker.reconnect()
+        which Persona 2 adds to the protocol.
+        """
+        if self.reconnected:
+            return
+        self.reconnected = True
+        self.remote_host = ack.new_host_ip
+        self.remote_port = ack.udp_port
+        # TODO(persona2): self.game_event_broker.reconnect(ack.new_host_ip, ack.game_events_port)
+        LOGGER.info(
+            "reconnected to new host %s (udp_port=%d, game_events_port=%d)",
+            ack.new_host_ip,
+            ack.udp_port,
+            ack.game_events_port,
+        )
+
+    def _on_self_elected(self, event: SelfElected) -> None:
+        """Called when this node wins the election.
+
+        Persona 2 (ElectionMixin) overrides this to broadcast NewHostClaim,
+        collect ElectionAck quorum, and call _promote_to_host().
+        This stub logs the event so the frame loop continues correctly even
+        before Persona 2's work is integrated.
+        """
+        LOGGER.info("election: won — waiting for Persona 2 ElectionMixin to promote")
+
+    # ------------------------------------------------------------------
+    # Prediction and reconciliation (unchanged from M5)
+    # ------------------------------------------------------------------
 
     def _run_predicted_ticks(self, dt: float, local_input: InputState) -> None:
         """Predict and tick the engine, applying any pending drift correction."""
@@ -68,14 +193,14 @@ class ClientGameplayMixin:
 
         if deviation > PREDICTION_LEAD_DRIFT_TOLERANCE:
             self.pending_tick_adjustment = -1
-            LOGGER.info(
+            LOGGER.debug(
                 "prediction lead drift: pending=%d baseline=%.2f -> skipping next tick",
                 pending,
                 baseline,
             )
         elif deviation < -PREDICTION_LEAD_DRIFT_TOLERANCE:
             self.pending_tick_adjustment = 1
-            LOGGER.info(
+            LOGGER.debug(
                 "prediction lead drift: pending=%d baseline=%.2f -> double-ticking next frame",
                 pending,
                 baseline,
@@ -152,6 +277,7 @@ class ClientGameplayMixin:
 
     def _drain_snapshot_packets(self) -> None:
         """Poll incoming snapshots, reconcile predicted state, update shadow copies."""
+        now = time.time()
         while True:
             packet = self.udp_handler.receive_packet_nowait()
             if packet is None:
@@ -167,6 +293,10 @@ class ClientGameplayMixin:
             self.prediction_engine.reconcile(decoded)
             self._update_shadow_copies(decoded)
             self.received_snapshots += 1
+            if self.timeout_watcher is not None:
+                self.timeout_watcher.reset(now)
+            if self.env_state_buffer is not None:
+                self.env_state_buffer.update(decoded)
 
     def _update_shadow_copies(self, snapshot: WorldStateSnapshot) -> None:
         """Push new authoritative states to shadow copies for all remote players."""

@@ -6,6 +6,7 @@ import time
 
 from distributed_smb.shared.config import UDP_INPUT_TIMEOUT
 from distributed_smb.shared.mappers.gameplay_mapper import event_to_message
+from distributed_smb.shared.messages.election import ElectionAck, ElectionNack, NewHostClaim, ReconnectionAck
 from distributed_smb.shared.messages.gameplay import (
     BlockDestroyedMessage,
     GateStateChangedMessage,
@@ -86,3 +87,19 @@ class GameEventMixin:
             elif isinstance(msg, PlayerLeft):
                 LOGGER.info("Player left (received): %s", msg.player_id)
                 self._evict_player(msg.player_id)
+            elif isinstance(msg, NewHostClaim):
+                LOGGER.info(
+                    "election: NewHostClaim from %s (join_index=%d)",
+                    msg.claimer_ip,
+                    msg.claimer_join_index,
+                )
+                self._on_new_host_claim(msg)
+            elif isinstance(msg, ElectionAck):
+                LOGGER.info("election: ElectionAck from %s", msg.from_ip)
+                self._on_election_ack(msg)
+            elif isinstance(msg, ElectionNack):
+                LOGGER.info("election: ElectionNack from %s (%s)", msg.from_ip, msg.reason)
+                self._on_election_nack(msg)
+            elif isinstance(msg, ReconnectionAck):
+                LOGGER.info("election: ReconnectionAck from new host %s", msg.new_host_ip)
+                self._on_reconnection_ack(msg)
