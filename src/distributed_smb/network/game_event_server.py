@@ -138,6 +138,13 @@ class GameEventBroker:
     def launch(self, host: str = "0.0.0.0", port: int = GAME_EVENT_WS_PORT) -> None:
         launch_game_event_server(host=host, port=port)
 
+    def reconnect(self, host: str, port: int) -> None:
+        # In-process server: clients reconnect via a new WsHandler on NodeController.
+        pass
+
+    def promote_to_server(self, port: int) -> None:
+        launch_game_event_server(host="0.0.0.0", port=port)
+
 
 def launch_game_event_server(
     host: str = "0.0.0.0", port: int = GAME_EVENT_WS_PORT

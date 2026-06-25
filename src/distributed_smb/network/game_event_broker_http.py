@@ -35,3 +35,9 @@ class HttpGameEventBroker:
 
     def launch(self, host: str = "0.0.0.0", port: int = GAME_EVENT_WS_PORT) -> None:
         pass  # container lifecycle managed by LobbyContainerManager
+
+    def reconnect(self, host: str, port: int) -> None:
+        self._url = f"http://{host}:{port}/events"
+
+    def promote_to_server(self, port: int) -> None:
+        pass  # new host's container is started by LobbyContainerManager externally

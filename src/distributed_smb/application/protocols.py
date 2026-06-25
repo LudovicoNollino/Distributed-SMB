@@ -8,6 +8,8 @@ class GameEventBrokerProtocol(Protocol):
     def send(self, payload: bytes) -> None: ...
     def get_disconnected_player(self) -> str | None: ...
     def launch(self, host: str = "0.0.0.0", port: int = 0) -> None: ...
+    def reconnect(self, host: str, port: int) -> None: ...
+    def promote_to_server(self, port: int) -> None: ...
 
 
 @runtime_checkable
@@ -36,6 +38,12 @@ class NoopGameEventBroker:
         return None
 
     def launch(self, host: str = "0.0.0.0", port: int = 0) -> None:
+        pass
+
+    def reconnect(self, host: str, port: int) -> None:
+        pass
+
+    def promote_to_server(self, port: int) -> None:
         pass
 
 
