@@ -67,6 +67,11 @@ class GlobalRoster:
         """Remove a player from the roster by player_id (no-op if not found)."""
         self.players = [p for p in self.players if p.player_id != player_id]
 
+    def promote_host(self, player_id: str) -> None:
+        """Mark player_id as the new authoritative host, clearing the flag on all others."""
+        for p in self.players:
+            p.is_host = p.player_id == player_id
+
     def get_all_players(self) -> list[RosterEntry]:
         """Get all players sorted by join order."""
         return sorted(self.players, key=lambda p: p.join_index)

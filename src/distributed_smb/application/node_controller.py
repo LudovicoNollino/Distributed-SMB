@@ -143,6 +143,10 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     env_state_buffer: EnvironmentalStateBuffer | None = None
     election_triggered: bool = False
     reconnected: bool = False
+    # --- M8: election claim tracking ---
+    _pending_election_acks: set = field(default_factory=set)
+    _election_claim_deadline: float = 0.0
+    _promotion_done: bool = False
 
     def __post_init__(self) -> None:
         if isinstance(self.prediction_engine, NoopPredictionEngine):
