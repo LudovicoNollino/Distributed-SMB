@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import queue
 import threading
 from dataclasses import dataclass, field
@@ -12,6 +13,7 @@ from websockets.asyncio.client import connect as ws_connect
 from distributed_smb.network.serializer import Serializer, WsMessage
 from distributed_smb.shared.config import LOBBY_WS_PATH, LOBBY_WS_URL_TEMPLATE
 
+LOGGER = logging.getLogger(__name__)
 _serializer = Serializer()
 
 
@@ -63,13 +65,15 @@ class WsHandler:
             async with ws_connect(self._url()) as ws:
                 self._ws = ws
                 ready.set()
+                LOGGER.debug("WsHandler: connected to %s", self._url())
                 async for raw in ws:
                     try:
                         msg = _serializer.decode_ws_message(json.loads(raw))
                         self.inbox.put(msg)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        LOGGER.debug("WsHandler: failed to decode %r: %s", raw[:120], exc)
         except Exception as exc:
+            LOGGER.warning("WsHandler: receive loop ended for %s: %s", self._url(), exc)
             self._connection_error = exc
             ready.set()
 

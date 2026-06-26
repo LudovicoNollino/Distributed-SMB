@@ -14,6 +14,7 @@ from distributed_smb.application.election import (
     EnvironmentalStateBuffer,
     HostTimeoutWatcher,
 )
+from distributed_smb.application.election_mixin import ElectionMixin
 from distributed_smb.application.game_event_dispatcher import GameEventMixin
 from distributed_smb.application.host_gameplay import HostGameplayMixin
 from distributed_smb.application.lobby_coordinator import (
@@ -77,7 +78,7 @@ __all__ = [
 
 
 @dataclass(slots=True)
-class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEventMixin):
+class NodeController(ElectionMixin, LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEventMixin):
     """Coordinates the node runtime without embedding domain logic."""
 
     lifecycle: NodeLifecycle = field(default_factory=NodeLifecycle)
@@ -317,6 +318,29 @@ class NodeController(LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEve
     def _spawn_position_for(self, join_index: int) -> tuple[int, int]:
         """Return a stable spawn point determined by join order (0-based)."""
         return 100 + join_index * 140, 100
+
+    def _rebuild_udp_as_host(self) -> None:
+        """Rebind the UDP socket to the authoritative host port after promotion."""
+        self.udp_handler.close_socket()
+        self.udp_handler = UdpHandler(host="0.0.0.0", port=HOST_UDP_PORT)
+
+    def _reconnect_game_event_handler(self, host: str, port: int, path: str) -> None:
+        """Replace the WebSocket event handler with a new connection to the given endpoint."""
+        self.game_event_handler.close()
+        self.game_event_handler = WsHandler(host=host, port=port, path=path)
+        for attempt in range(6):
+            try:
+                self.game_event_handler.connect(timeout=2.0)
+                return
+            except (ConnectionError, TimeoutError):
+                if attempt < 5:
+                    LOGGER.info(
+                        "game event relay not ready (attempt %d/6), retrying in 1s…", attempt + 1
+                    )
+                    time.sleep(1.0)
+        LOGGER.warning(
+            "could not reconnect game event relay at %s:%d — continuing without relay", host, port
+        )
 
     def _load_game_app_class(self) -> type[Any] | None:
         """Load the optional Pygame runtime provided by the presentation layer."""

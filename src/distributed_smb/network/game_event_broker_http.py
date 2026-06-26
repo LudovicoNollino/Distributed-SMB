@@ -1,11 +1,14 @@
 """HTTP-based GameEventBroker — forwards events to the containerised game-event server."""
 
+import logging
 import queue
 import threading
 
 import httpx
 
 from distributed_smb.shared.config import GAME_EVENT_WS_PORT
+
+LOGGER = logging.getLogger(__name__)
 
 
 class HttpGameEventBroker:
@@ -27,8 +30,9 @@ class HttpGameEventBroker:
             payload = self._queue.get()
             try:
                 httpx.post(self._url, content=payload, timeout=1.0)
-            except Exception:
-                pass
+                LOGGER.debug("HTTP POST ok → %s (%d bytes)", self._url, len(payload))
+            except Exception as exc:
+                LOGGER.warning("HTTP POST failed → %s: %s", self._url, exc)
 
     def get_disconnected_player(self) -> str | None:
         return None  # M8: add GET /disconnections endpoint

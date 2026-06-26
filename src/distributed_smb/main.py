@@ -32,13 +32,10 @@ def build_controller(
 ) -> NodeController:
     """Create and bootstrap the application's central controller."""
     if use_discovery:
-        container_mgr = (
-            LobbyContainerManager() if role is PlayerRole.HOST else NoopLobbyContainerManager()
-        )
         controller = NodeController(
             game_event_broker=HttpGameEventBroker(),
             discovery_service=DiscoveryService(),
-            lobby_container_manager=container_mgr,
+            lobby_container_manager=LobbyContainerManager(),
             use_discovery=True,
         )
     else:

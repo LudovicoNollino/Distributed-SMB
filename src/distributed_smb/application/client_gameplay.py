@@ -13,6 +13,7 @@ from distributed_smb.application.election import (
 )
 from distributed_smb.shared.config import (
     ELECTION_CLAIM_TIMEOUT_S,
+    GAME_EVENT_WS_PATH,
     HOST_TIMEOUT_S,
     PREDICTION_LEAD_DRIFT_TOLERANCE,
     PREDICTION_LEAD_EWMA_ALPHA,
@@ -100,6 +101,7 @@ class ClientGameplayMixin:
             if isinstance(event, SelfElected):
                 LOGGER.info("election: self-elected as new host (ip=%s)", event.my_ip)
                 self._on_self_elected(event)
+            self._tick_claim_deadline(now)
 
     # ------------------------------------------------------------------
     # Election event handlers (called from _drain_game_events)
@@ -131,18 +133,13 @@ class ClientGameplayMixin:
         pass
 
     def _on_reconnection_ack(self, ack: ReconnectionAck) -> None:
-        """Reconnect to the newly elected host after migration.
-
-        Updates the UDP destination so subsequent PlayerInputPackets reach the
-        new host. WebSocket reconnect is delegated to game_event_broker.reconnect()
-        which Persona 2 adds to the protocol.
-        """
-        if self.reconnected:
+        if self.reconnected or self._promotion_done:
             return
         self.reconnected = True
         self.remote_host = ack.new_host_ip
         self.remote_port = ack.udp_port
-        # TODO(persona2): self.game_event_broker.reconnect(ack.new_host_ip, ack.game_events_port)
+        self._reconnect_game_event_handler(ack.new_host_ip, ack.game_events_port, GAME_EVENT_WS_PATH)
+        self.game_event_broker.reconnect(ack.new_host_ip, ack.game_events_port)
         LOGGER.info(
             "reconnected to new host %s (udp_port=%d, game_events_port=%d)",
             ack.new_host_ip,
