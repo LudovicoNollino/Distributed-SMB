@@ -136,7 +136,16 @@ class LobbyMixin:
             host_ip, lobby_port = self.discovery_service.discover(session_id)
             self._make_lobby_ws_client(host_ip, lobby_port)
         self.udp_handler.open_socket()  # bind early so actual port is known before announcing
-        self.ws_handler.connect()
+        for attempt in range(10):
+            try:
+                self.ws_handler.connect(timeout=2.0)
+                break
+            except (ConnectionError, TimeoutError):
+                if attempt < 9:
+                    LOGGER.info("lobby not ready yet (attempt %d/10), retrying in 1s…", attempt + 1)
+                    time.sleep(1.0)
+                else:
+                    raise
         self.ws_handler.send(
             SessionJoin(
                 session_id=session_id,
