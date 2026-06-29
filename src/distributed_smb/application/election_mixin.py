@@ -98,7 +98,8 @@ class ElectionMixin:
             LOGGER.warning("election: peer %s unresponsive — removing from roster", ip)
             entry = next(
                 (
-                    e for e in self.roster.get_all_players()
+                    e
+                    for e in self.roster.get_all_players()
                     if e.host == ip and e.player_id != self.local_player_id
                 ),
                 None,
@@ -136,8 +137,7 @@ class ElectionMixin:
 
         # Broadcast ReconnectionAck via relay while old server is still reachable
         surviving_peers = [
-            e for e in self.roster.get_all_players()
-            if e.player_id != self.local_player_id
+            e for e in self.roster.get_all_players() if e.player_id != self.local_player_id
         ]
         if surviving_peers:
             ack_msg = ReconnectionAck(
@@ -148,9 +148,7 @@ class ElectionMixin:
             )
             payload = json.dumps(self.serializer.encode_ws_message(ack_msg)).encode()
             self.game_event_broker.send(payload)
-            LOGGER.info(
-                "election: ReconnectionAck broadcast to %d peer(s)", len(surviving_peers)
-            )
+            LOGGER.info("election: ReconnectionAck broadcast to %d peer(s)", len(surviving_peers))
 
         # Start own game event server:
         # - in-process mode: promote_to_server() launches the FastAPI server

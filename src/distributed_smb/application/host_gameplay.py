@@ -31,9 +31,7 @@ class HostGameplayMixin:
         """
         self.engine.world_state = snapshot.world_state
         self.last_snapshot_sequence = snapshot.sequence_number
-        LOGGER.info(
-            "bootstrapped world state from snapshot seq=%d", snapshot.sequence_number
-        )
+        LOGGER.info("bootstrapped world state from snapshot seq=%d", snapshot.sequence_number)
 
     def _drain_remote_input_packets(self) -> int:
         """Poll incoming client input packets and cache the latest valid ones.

@@ -63,20 +63,24 @@ def _make_controller(
     nc.session_id = "test-session"
 
     if with_host_in_roster:
-        nc.roster.add_player(RosterEntry(
-            player_id="player1",
-            host="10.0.0.1",
-            udp_port=HOST_UDP_PORT,
-            join_index=0,
-            is_host=True,
-        ))
-    nc.roster.add_player(RosterEntry(
-        player_id=local_player_id,
-        host=local_ip,
-        udp_port=50011,
-        join_index=join_index,
-        is_host=False,
-    ))
+        nc.roster.add_player(
+            RosterEntry(
+                player_id="player1",
+                host="10.0.0.1",
+                udp_port=HOST_UDP_PORT,
+                join_index=0,
+                is_host=True,
+            )
+        )
+    nc.roster.add_player(
+        RosterEntry(
+            player_id=local_player_id,
+            host=local_ip,
+            udp_port=50011,
+            join_index=join_index,
+            is_host=False,
+        )
+    )
     nc.election_coordinator = ElectionCoordinator(
         join_index=join_index,
         my_ip=local_ip,
@@ -96,6 +100,7 @@ class TestOnSelfElected:
     def test_no_peers_promotes_immediately(self):
         """Sole surviving client promotes without broadcasting a claim."""
         from distributed_smb.application.election import SelfElected
+
         nc, broker = _make_controller()
         # No other clients in roster → _known_client_peers() returns empty set
         event = SelfElected(my_ip="10.0.0.2")
@@ -108,11 +113,17 @@ class TestOnSelfElected:
     def test_with_peers_broadcasts_claim(self):
         """With surviving peers, NewHostClaim is broadcast and promotion deferred."""
         from distributed_smb.application.election import SelfElected
+
         nc, broker = _make_controller()
         # Add a second client peer
-        nc.roster.add_player(RosterEntry(
-            player_id="player3", host="10.0.0.3", udp_port=50012, join_index=2,
-        ))
+        nc.roster.add_player(
+            RosterEntry(
+                player_id="player3",
+                host="10.0.0.3",
+                udp_port=50012,
+                join_index=2,
+            )
+        )
 
         event = SelfElected(my_ip="10.0.0.2")
         nc._on_self_elected(event)
@@ -124,10 +135,16 @@ class TestOnSelfElected:
 
     def test_claim_deadline_is_set(self):
         from distributed_smb.application.election import SelfElected
+
         nc, broker = _make_controller()
-        nc.roster.add_player(RosterEntry(
-            player_id="player3", host="10.0.0.3", udp_port=50012, join_index=2,
-        ))
+        nc.roster.add_player(
+            RosterEntry(
+                player_id="player3",
+                host="10.0.0.3",
+                udp_port=50012,
+                join_index=2,
+            )
+        )
         before = time.time()
         nc._on_self_elected(SelfElected(my_ip="10.0.0.2"))
 
@@ -232,9 +249,14 @@ class TestTickClaimDeadline:
     def test_deadline_passed_removes_unresponsive_and_promotes(self):
         """After deadline, silent peer is removed from roster and node promotes."""
         nc, broker = _make_controller()
-        nc.roster.add_player(RosterEntry(
-            player_id="player3", host="10.0.0.3", udp_port=50012, join_index=2,
-        ))
+        nc.roster.add_player(
+            RosterEntry(
+                player_id="player3",
+                host="10.0.0.3",
+                udp_port=50012,
+                join_index=2,
+            )
+        )
         nc._pending_election_acks = {"10.0.0.3"}
         nc._election_claim_deadline = time.time() - 0.1  # already in the past
 
@@ -284,9 +306,14 @@ class TestPromoteToHost:
     def test_reconnection_ack_broadcast_to_peers(self):
         """If surviving peers exist, a ReconnectionAck is broadcast."""
         nc, broker = _make_controller()
-        nc.roster.add_player(RosterEntry(
-            player_id="player3", host="10.0.0.3", udp_port=50012, join_index=2,
-        ))
+        nc.roster.add_player(
+            RosterEntry(
+                player_id="player3",
+                host="10.0.0.3",
+                udp_port=50012,
+                join_index=2,
+            )
+        )
         nc._promote_to_host()
 
         sent_types = [json.loads(p).get("message_type") for p in broker.sent]

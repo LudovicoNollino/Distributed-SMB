@@ -169,6 +169,7 @@ class TestReconnectionAckValidation:
 # End-to-end process-level tests (require Persona 2 ElectionMixin)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.skip(reason="Requires Persona 2 ElectionMixin + promote_to_host()")
 class TestHostMigration3Players:
     """Kill the host process → session resumes on surviving client."""

@@ -44,6 +44,7 @@ class WsHandler:
 
         Blocks until the handshake completes or `timeout` seconds elapse.
         """
+        self._connection_error = None  # reset so retries don't see a stale error
         ready = threading.Event()
 
         def _run() -> None:
