@@ -3,11 +3,8 @@
 import json
 import time
 
-import pytest
-
 from distributed_smb.application.election import ElectionCoordinator, EnvironmentalStateBuffer
 from distributed_smb.application.node_controller import NodeController
-from distributed_smb.network.serializer import Serializer
 from distributed_smb.shared.config import (
     ELECTION_CLAIM_TIMEOUT_S,
     GAME_EVENT_WS_PORT,
@@ -16,9 +13,8 @@ from distributed_smb.shared.config import (
     T_ELECTION_DELTA_S,
 )
 from distributed_smb.shared.enums import MessageType, PlayerRole
-from distributed_smb.shared.messages.election import ElectionAck, NewHostClaim, ReconnectionAck
+from distributed_smb.shared.messages.election import ElectionAck, NewHostClaim
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
-
 
 # ---------------------------------------------------------------------------
 # Test doubles
@@ -264,7 +260,6 @@ class TestPromoteToHost:
         """Calling _promote_to_host twice does not promote_to_server twice."""
         nc, broker = _make_controller()
         nc._promote_to_host()
-        first_port = broker.promoted_port
         broker.promoted_port = None
 
         nc._promote_to_host()
@@ -315,7 +310,9 @@ class TestPromoteToHost:
 class TestPromoteHost:
     def _make_roster(self) -> GlobalRoster:
         r = GlobalRoster()
-        r.add_player(RosterEntry(player_id="p1", host="10.0.0.1", udp_port=50010, join_index=0, is_host=True))
+        r.add_player(
+            RosterEntry(player_id="p1", host="10.0.0.1", udp_port=50010, join_index=0, is_host=True)
+        )
         r.add_player(RosterEntry(player_id="p2", host="10.0.0.2", udp_port=50011, join_index=1))
         return r
 

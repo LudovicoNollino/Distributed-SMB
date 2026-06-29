@@ -34,7 +34,9 @@ class LobbyContainerManager:
                     LOGGER.warning("container %s already running (peer started it) — reusing", name)
                 else:
                     LOGGER.error("failed to start container %s: %s", name, stderr)
-                    raise subprocess.CalledProcessError(result.returncode, result.args, result.stderr)
+                    raise subprocess.CalledProcessError(
+                        result.returncode, result.args, result.stderr
+                    )
         time.sleep(LOBBY_STARTUP_WAIT)
 
     def stop(self) -> None:

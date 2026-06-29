@@ -78,7 +78,9 @@ __all__ = [
 
 
 @dataclass(slots=True)
-class NodeController(ElectionMixin, LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEventMixin):
+class NodeController(
+    ElectionMixin, LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEventMixin
+):
     """Coordinates the node runtime without embedding domain logic."""
 
     lifecycle: NodeLifecycle = field(default_factory=NodeLifecycle)

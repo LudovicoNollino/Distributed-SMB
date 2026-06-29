@@ -81,7 +81,16 @@ class LobbyMixin:
             time.sleep(LOBBY_STARTUP_WAIT)
 
         self._notify_lobby_update("Connecting to lobby", on_update)
-        self.ws_handler.connect()
+        for attempt in range(10):
+            try:
+                self.ws_handler.connect(timeout=2.0)
+                break
+            except (ConnectionError, TimeoutError):
+                if attempt < 9:
+                    LOGGER.info("lobby not ready yet (attempt %d/10), retrying in 1s…", attempt + 1)
+                    time.sleep(1.0)
+                else:
+                    raise
         self.ws_handler.send(
             SessionCreate(
                 player_id=self.local_player_id,

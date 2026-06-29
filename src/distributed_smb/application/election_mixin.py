@@ -7,7 +7,6 @@ import time
 from distributed_smb.application.election import FollowingHost, SelfElected
 from distributed_smb.shared.config import (
     ELECTION_CLAIM_TIMEOUT_S,
-    GAME_EVENT_WS_PATH,
     GAME_EVENT_WS_PORT,
     HOST_UDP_PORT,
 )

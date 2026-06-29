@@ -12,7 +12,6 @@ from distributed_smb.application.election import (
     SelfElected,
 )
 from distributed_smb.shared.config import (
-    ELECTION_CLAIM_TIMEOUT_S,
     GAME_EVENT_WS_PATH,
     HOST_TIMEOUT_S,
     PREDICTION_LEAD_DRIFT_TOLERANCE,
@@ -138,7 +137,9 @@ class ClientGameplayMixin:
         self.reconnected = True
         self.remote_host = ack.new_host_ip
         self.remote_port = ack.udp_port
-        self._reconnect_game_event_handler(ack.new_host_ip, ack.game_events_port, GAME_EVENT_WS_PATH)
+        self._reconnect_game_event_handler(
+            ack.new_host_ip, ack.game_events_port, GAME_EVENT_WS_PATH
+        )
         self.game_event_broker.reconnect(ack.new_host_ip, ack.game_events_port)
         LOGGER.info(
             "reconnected to new host %s (udp_port=%d, game_events_port=%d)",

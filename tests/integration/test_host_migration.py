@@ -18,9 +18,6 @@ Architecture note — why no explicit state transfer:
   world state is immediately authoritative — no extra protocol needed.
 """
 
-import os
-import subprocess
-import sys
 import time
 
 import pytest
@@ -40,7 +37,6 @@ from distributed_smb.shared.config import (
 )
 from distributed_smb.shared.messages.election import ReconnectionAck
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
-
 
 # ---------------------------------------------------------------------------
 # Unit-level integration: timeout watcher + election coordinator together

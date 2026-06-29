@@ -5,7 +5,6 @@ import logging
 import socket
 
 from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
-from distributed_smb.application.protocols import NoopLobbyContainerManager
 from distributed_smb.network.discovery import DiscoveryService
 from distributed_smb.network.game_event_broker_http import HttpGameEventBroker
 from distributed_smb.network.game_event_server import GameEventBroker
