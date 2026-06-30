@@ -42,6 +42,10 @@ class MessageType(StrEnum):
     PLAYER_INPUT = "player_input"
     WORLD_STATE = "world_state"
 
+    # UDP — host discovery / rejoin (M9)
+    HOST_DISCOVERY_PROBE = "host_discovery_probe"
+    HOST_IDENTITY_RESPONSE = "host_identity_response"
+
     # WebSocket — lobby coordination (client → lobby)
     SESSION_CREATE = "session_create"
     SESSION_JOIN = "session_join"

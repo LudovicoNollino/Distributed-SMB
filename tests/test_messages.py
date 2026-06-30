@@ -11,6 +11,7 @@ from distributed_smb.shared.messages.gameplay import (
     PlayerLeft,
     PowerUpCollectedMessage,
 )
+from distributed_smb.shared.messages.recovery import HostDiscoveryProbe, HostIdentityResponse
 from distributed_smb.shared.messages.session import RosterUpdate, SessionCreate, SessionJoin
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry, RosterValidationError
 
@@ -116,3 +117,43 @@ def test_gate_state_changed_message():
 
     assert msg.message_type.value == "gate_state_changed_message"
     assert msg.new_state == "open"
+
+
+def test_host_discovery_probe_message():
+    msg = HostDiscoveryProbe(session_id="abc", requester_ip="10.0.0.5")
+
+    assert msg.message_type.value == "host_discovery_probe"
+    assert msg.requester_ip == "10.0.0.5"
+
+    data = json.loads(json.dumps(asdict(msg)))
+    assert data["session_id"] == "abc"
+
+
+def test_host_discovery_probe_invalid_session_id():
+    with pytest.raises(MessageValidationError, match="Invalid session_id"):
+        HostDiscoveryProbe(session_id="", requester_ip="10.0.0.5")
+
+
+def test_host_discovery_probe_invalid_requester_ip():
+    with pytest.raises(MessageValidationError, match="Invalid requester_ip"):
+        HostDiscoveryProbe(session_id="abc", requester_ip="")
+
+
+def test_host_identity_response_message():
+    msg = HostIdentityResponse(session_id="abc", host_ip="10.0.0.1")
+
+    assert msg.message_type.value == "host_identity_response"
+    assert msg.host_ip == "10.0.0.1"
+
+    data = json.loads(json.dumps(asdict(msg)))
+    assert data["host_ip"] == "10.0.0.1"
+
+
+def test_host_identity_response_invalid_host_ip():
+    with pytest.raises(MessageValidationError, match="Invalid host_ip"):
+        HostIdentityResponse(session_id="abc", host_ip="")
+
+
+def test_host_identity_response_invalid_session_id():
+    with pytest.raises(MessageValidationError, match="Invalid session_id"):
+        HostIdentityResponse(session_id="", host_ip="10.0.0.1")

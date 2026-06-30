@@ -143,3 +143,19 @@ class ReconnectionAckSchema(BaseModel):
     game_events_port: int = Field(..., ge=1024, le=65535)
     session_id: str = Field(..., min_length=1)
     message_type: str = Field(default="reconnection_ack")
+
+
+class HostDiscoveryProbeSchema(BaseModel):
+    """Schema for UDP HostDiscoveryProbe validation."""
+
+    session_id: str = Field(..., min_length=1)
+    requester_ip: str = Field(..., min_length=1)
+    message_type: str = Field(default="host_discovery_probe")
+
+
+class HostIdentityResponseSchema(BaseModel):
+    """Schema for UDP HostIdentityResponse validation."""
+
+    session_id: str = Field(..., min_length=1)
+    host_ip: str = Field(..., min_length=1)
+    message_type: str = Field(default="host_identity_response")

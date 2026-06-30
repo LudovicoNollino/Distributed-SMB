@@ -5,6 +5,7 @@ import time
 
 from distributed_smb.application.election import ElectionCoordinator, EnvironmentalStateBuffer
 from distributed_smb.application.node_controller import NodeController
+from distributed_smb.domain.world import CharacterState
 from distributed_smb.shared.config import (
     ELECTION_CLAIM_TIMEOUT_S,
     GAME_EVENT_WS_PORT,
@@ -13,6 +14,7 @@ from distributed_smb.shared.config import (
     T_ELECTION_DELTA_S,
 )
 from distributed_smb.shared.enums import MessageType, PlayerRole
+from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.election import ElectionAck, NewHostClaim
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
@@ -265,6 +267,38 @@ class TestTickClaimDeadline:
         assert nc._promotion_done is True
         assert nc.role is PlayerRole.HOST
         assert nc.roster.get_player("player3") is None
+
+    def test_deadline_passed_fully_evicts_unresponsive_peer(self):
+        """Silent peer is evicted everywhere, not just removed from the roster.
+
+        Regression test for the gap noted in HANDOFF_300626.md: a peer that
+        times out during election left ghost entries in world_state and the
+        per-player input/timing caches because _tick_claim_deadline used to
+        call roster.remove_player() directly instead of _evict_player().
+        """
+        nc, broker = _make_controller()
+        nc.roster.add_player(
+            RosterEntry(
+                player_id="player3",
+                host="10.0.0.3",
+                udp_port=50012,
+                join_index=2,
+            )
+        )
+        nc.engine.world_state.add_player(CharacterState(player_id="player3"))
+        nc.cached_remote_inputs["player3"] = InputState()
+        nc.last_remote_input_sequence["player3"] = 5
+        nc.last_input_time["player3"] = time.time()
+        nc._pending_election_acks = {"10.0.0.3"}
+        nc._election_claim_deadline = time.time() - 0.1  # already in the past
+
+        nc._tick_claim_deadline(time.time())
+
+        assert nc.roster.get_player("player3") is None
+        assert nc.engine.world_state.get_player("player3") is None
+        assert "player3" not in nc.cached_remote_inputs
+        assert "player3" not in nc.last_remote_input_sequence
+        assert "player3" not in nc.last_input_time
 
 
 # ---------------------------------------------------------------------------

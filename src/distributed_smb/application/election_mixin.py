@@ -95,7 +95,7 @@ class ElectionMixin:
         if self._election_claim_deadline == 0.0 or now < self._election_claim_deadline:
             return
         for ip in list(self._pending_election_acks):
-            LOGGER.warning("election: peer %s unresponsive — removing from roster", ip)
+            LOGGER.warning("election: peer %s unresponsive — evicting", ip)
             entry = next(
                 (
                     e
@@ -105,7 +105,7 @@ class ElectionMixin:
                 None,
             )
             if entry:
-                self.roster.remove_player(entry.player_id)
+                self._evict_player(entry.player_id)  # removes from roster + world state
         self._pending_election_acks.clear()
         self._promote_to_host()
 
