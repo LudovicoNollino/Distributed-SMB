@@ -6,6 +6,10 @@ from distributed_smb.network.serializer import Serializer
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.gameplay import PlayerInputPacket
+from distributed_smb.shared.messages.recovery import (
+    HostDiscoveryProbe,
+    HostIdentityResponse,
+)
 from distributed_smb.shared.messages.session import (
     GameStart,
     RosterUpdate,
@@ -13,10 +17,6 @@ from distributed_smb.shared.messages.session import (
     SessionCreated,
     SessionJoin,
     SessionJoined,
-)
-from distributed_smb.shared.messages.recovery import (
-    HostDiscoveryProbe,
-    HostIdentityResponse,
 )
 from distributed_smb.shared.messages.sync import InitialStateSync, WorldStateSnapshot
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry

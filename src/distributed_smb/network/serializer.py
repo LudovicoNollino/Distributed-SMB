@@ -23,6 +23,10 @@ from distributed_smb.shared.messages.gameplay import (
     PlayerLeft,
     PowerUpCollectedMessage,
 )
+from distributed_smb.shared.messages.recovery import (
+    HostDiscoveryProbe,
+    HostIdentityResponse,
+)
 from distributed_smb.shared.messages.schemas import (
     BlockDestroyedMessageSchema,
     ElectionAckSchema,
@@ -44,10 +48,6 @@ from distributed_smb.shared.messages.schemas import (
     SessionJoinedSchema,
     SessionJoinSchema,
     WorldStateSchema,
-)
-from distributed_smb.shared.messages.recovery import (
-    HostDiscoveryProbe,
-    HostIdentityResponse,
 )
 from distributed_smb.shared.messages.session import (
     GameStart,
