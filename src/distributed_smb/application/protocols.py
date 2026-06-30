@@ -2,6 +2,8 @@
 
 from typing import Protocol, runtime_checkable
 
+from distributed_smb.shared.session_metadata import CachedPeer
+
 
 @runtime_checkable
 class GameEventBrokerProtocol(Protocol):
@@ -22,6 +24,17 @@ class DiscoveryServiceProtocol(Protocol):
     def announce(self, session_id: str, lobby_port: int) -> None: ...
     def discover(self, session_id: str, timeout: float = 5.0) -> tuple[str, int]: ...
     def stop(self) -> None: ...
+
+
+@runtime_checkable
+class RecoveryProberProtocol(Protocol):
+    def find_current_host(
+        self,
+        session_id: str,
+        requester_ip: str,
+        peers: list[CachedPeer],
+        timeout_per_peer: float,
+    ) -> str | None: ...
 
 
 @runtime_checkable
@@ -61,6 +74,17 @@ class NoopDiscoveryService:
 
     def stop(self) -> None:
         pass
+
+
+class NoopRecoveryProber:
+    def find_current_host(
+        self,
+        session_id: str,
+        requester_ip: str,
+        peers: list[CachedPeer],
+        timeout_per_peer: float,
+    ) -> str | None:
+        return None
 
 
 class NoopLobbyContainerManager:
