@@ -32,6 +32,8 @@ from distributed_smb.application.protocols import (
     NoopGameEventBroker,
     NoopLobbyContainerManager,
     NoopLobbyService,
+    NoopRecoveryProber,
+    RecoveryProberProtocol,
 )
 from distributed_smb.application.reconciliation import (
     InterpolatedShadowCopy,
@@ -41,6 +43,7 @@ from distributed_smb.application.reconciliation import (
     PredictionEngineProtocol,
     ShadowCopyProtocol,
 )
+from distributed_smb.application.recovery_mixin import RecoveryMixin
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
 from distributed_smb.domain.world import CharacterState, WorldState
@@ -79,7 +82,12 @@ __all__ = [
 
 @dataclass(slots=True)
 class NodeController(
-    ElectionMixin, LobbyMixin, HostGameplayMixin, ClientGameplayMixin, GameEventMixin
+    ElectionMixin,
+    LobbyMixin,
+    HostGameplayMixin,
+    ClientGameplayMixin,
+    GameEventMixin,
+    RecoveryMixin,
 ):
     """Coordinates the node runtime without embedding domain logic."""
 
@@ -127,6 +135,7 @@ class NodeController(
     lobby_container_manager: LobbyContainerManagerProtocol = field(
         default_factory=NoopLobbyContainerManager
     )
+    recovery_prober: RecoveryProberProtocol = field(default_factory=NoopRecoveryProber)
     use_discovery: bool = False
     time_provider: Callable[[], float] = field(default_factory=lambda: time.monotonic)
     visual_correction_offset: tuple[float, float] = (0.0, 0.0)

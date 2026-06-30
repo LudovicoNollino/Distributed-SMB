@@ -54,6 +54,8 @@ class LobbyMixin:
         self._rebuild_world_from_roster()
         self._init_shadow_copies()
         self.lifecycle.move_to_game()
+        if hasattr(self, "_write_session_metadata"):
+            self._write_session_metadata()
         self._notify_lobby_update("Starting game", on_update)
         return self.roster
 
