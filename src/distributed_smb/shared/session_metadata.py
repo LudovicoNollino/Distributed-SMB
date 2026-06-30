@@ -55,11 +55,13 @@ def read_session_metadata(base_dir: Path | str = Path.cwd()) -> Optional[Session
                 or not isinstance(peer.get("join_index"), int)
             ):
                 return None
-            peers.append(CachedPeer(
-                player_id=peer["player_id"],
-                ip=peer["ip"],
-                join_index=peer["join_index"],
-            ))
+            peers.append(
+                CachedPeer(
+                    player_id=peer["player_id"],
+                    ip=peer["ip"],
+                    join_index=peer["join_index"],
+                )
+            )
 
         session_id = raw.get("session_id")
         local_player_id = raw.get("local_player_id")

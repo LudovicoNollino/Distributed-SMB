@@ -1,5 +1,4 @@
 import json
-import tempfile
 from pathlib import Path
 
 from distributed_smb.shared.session_metadata import (
