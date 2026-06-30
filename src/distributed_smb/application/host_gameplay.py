@@ -5,6 +5,7 @@ import time
 
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.gameplay import PlayerInputPacket
+from distributed_smb.shared.messages.recovery import HostDiscoveryProbe, HostIdentityResponse
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
 
 LOGGER = logging.getLogger(__name__)
@@ -46,6 +47,21 @@ class HostGameplayMixin:
                 return drained
             payload, _address = packet
             decoded = self.serializer.decode_message(payload)
+            if isinstance(decoded, HostDiscoveryProbe):
+                if decoded.session_id != self.session_id:
+                    continue
+
+                response = HostIdentityResponse(
+                    session_id=self.session_id,
+                    host_ip=self.local_ip,
+                )
+                self.udp_handler.send_packet_nowait(
+                    self.serializer.encode_message(response),
+                    _address[0],
+                    _address[1],
+                )
+                continue
+
             if not isinstance(decoded, PlayerInputPacket):
                 continue
 
