@@ -14,6 +14,10 @@ from distributed_smb.shared.messages.session import (
     SessionJoin,
     SessionJoined,
 )
+from distributed_smb.shared.messages.recovery import (
+    HostDiscoveryProbe,
+    HostIdentityResponse,
+)
 from distributed_smb.shared.messages.sync import InitialStateSync, WorldStateSnapshot
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
@@ -67,6 +71,34 @@ def test_encode_and_decode_world_state_snapshot():
         "player1",
         "player2",
     }
+
+
+def test_encode_and_decode_host_discovery_probe():
+    serializer = Serializer()
+    probe = HostDiscoveryProbe(session_id="session-abc", requester_ip="10.0.0.5")
+
+    decoded = serializer.decode_message(serializer.encode_message(probe))
+
+    assert isinstance(decoded, HostDiscoveryProbe)
+    assert decoded.session_id == "session-abc"
+    assert decoded.requester_ip == "10.0.0.5"
+
+
+def test_encode_and_decode_host_identity_response():
+    serializer = Serializer()
+    response = HostIdentityResponse(session_id="session-abc", host_ip="10.0.0.1")
+
+    decoded = serializer.decode_message(serializer.encode_message(response))
+
+    assert isinstance(decoded, HostIdentityResponse)
+    assert decoded.session_id == "session-abc"
+    assert decoded.host_ip == "10.0.0.1"
+
+
+def test_decode_unknown_udp_type_raises_deserialization_error():
+    serializer = Serializer()
+    with pytest.raises(ValueError, match="Unsupported UDP message type"):
+        serializer.decode_message('{"message_type": "unsupported_udp_type"}')
 
 
 # ------------------------------------------------------------------

@@ -29,6 +29,8 @@ from distributed_smb.shared.messages.schemas import (
     ElectionNackSchema,
     GameStartSchema,
     GateStateChangedMessageSchema,
+    HostDiscoveryProbeSchema,
+    HostIdentityResponseSchema,
     InitialStateSyncSchema,
     NewHostClaimSchema,
     PlayerDisconnectedSchema,
@@ -42,6 +44,10 @@ from distributed_smb.shared.messages.schemas import (
     SessionJoinedSchema,
     SessionJoinSchema,
     WorldStateSchema,
+)
+from distributed_smb.shared.messages.recovery import (
+    HostDiscoveryProbe,
+    HostIdentityResponse,
 )
 from distributed_smb.shared.messages.session import (
     GameStart,
@@ -101,11 +107,17 @@ class Serializer:
     # UDP transport
     # ------------------------------------------------------------------
 
-    def encode_message(self, payload: PlayerInputPacket | WorldStateSnapshot) -> bytes:
+    def encode_message(
+        self,
+        payload: PlayerInputPacket | WorldStateSnapshot | HostDiscoveryProbe | HostIdentityResponse,
+    ) -> bytes:
         """Encode a gameplay packet to bytes ready for UDP transport."""
         return self.encode(payload).encode("utf-8")
 
-    def decode_message(self, payload: str | bytes) -> PlayerInputPacket | WorldStateSnapshot:
+    def decode_message(
+        self,
+        payload: str | bytes,
+    ) -> PlayerInputPacket | WorldStateSnapshot | HostDiscoveryProbe | HostIdentityResponse:
         """Decode a UDP gameplay packet into its typed dataclass."""
         data = self.decode(payload)
         message_type = data.get("message_type")
@@ -125,6 +137,20 @@ class Serializer:
                 return WorldStateSnapshot(
                     sequence_number=validated.sequence_number,
                     world_state=world_state,
+                )
+
+            if message_type == MessageType.HOST_DISCOVERY_PROBE:
+                validated = HostDiscoveryProbeSchema(**data)
+                return HostDiscoveryProbe(
+                    session_id=validated.session_id,
+                    requester_ip=validated.requester_ip,
+                )
+
+            if message_type == MessageType.HOST_IDENTITY_RESPONSE:
+                validated = HostIdentityResponseSchema(**data)
+                return HostIdentityResponse(
+                    session_id=validated.session_id,
+                    host_ip=validated.host_ip,
                 )
 
             raise DeserializationError(f"Unsupported UDP message type: {message_type}")
