@@ -2,8 +2,6 @@ import socket
 import threading
 from typing import Optional
 
-import pytest
-
 from distributed_smb.application.protocols import NoopRecoveryProber, RecoveryProberProtocol
 from distributed_smb.application.recovery.prober import RecoveryProber
 from distributed_smb.network.serializer import Serializer
