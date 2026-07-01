@@ -5,6 +5,7 @@ import logging
 import socket
 
 from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
+from distributed_smb.application.recovery.prober import RecoveryProber
 from distributed_smb.network.discovery import DiscoveryService
 from distributed_smb.network.game_event_broker_http import HttpGameEventBroker
 from distributed_smb.network.game_event_server import GameEventBroker
@@ -20,6 +21,8 @@ from distributed_smb.shared.config import (
     LOBBY_WS_PORT,
 )
 from distributed_smb.shared.enums import PlayerRole
+from distributed_smb.shared.roster import GlobalRoster
+from distributed_smb.shared.session_metadata import delete_session_metadata, read_session_metadata
 
 
 def build_controller(
@@ -126,6 +129,45 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _try_recover_session(
+    local_ip: str,
+    *,
+    lobby_screen: LobbyScreen | None = None,
+    prober: RecoveryProber | None = None,
+) -> tuple[str, str] | None:
+    """Try to recover a previous client session from persisted metadata."""
+    metadata = read_session_metadata()
+    if metadata is None:
+        return None
+
+    screen = lobby_screen if lobby_screen is not None else LobbyScreen()
+    try:
+        if not screen.render(
+            role=PlayerRole.CLIENT,
+            status="Rientro nella sessione… come client",
+            session_id="",
+            roster=GlobalRoster(),
+        ):
+            return None
+
+        current_prober = prober or RecoveryProber()
+        host_ip = current_prober.find_current_host(
+            metadata.session_id,
+            local_ip,
+            metadata.peers,
+            timeout_per_peer=0.5,
+        )
+
+        if host_ip is None:
+            delete_session_metadata()
+            return None
+
+        return host_ip, metadata.session_id
+    finally:
+        if lobby_screen is None:
+            screen.close()
+
+
 def main(
     *,
     run_app: bool = False,
@@ -163,6 +205,7 @@ def main(
                 logging.info("Client join cancelled before connecting to lobby")
                 controller.udp_handler.close_socket()
                 lobby_screen.close()
+                delete_session_metadata()
                 return controller
 
             if use_discovery:
@@ -209,18 +252,21 @@ def main(
                 controller.ws_handler.close()
                 controller.udp_handler.close_socket()
                 controller.lobby_container_manager.stop()
+                delete_session_metadata()
                 return controller
         except LobbyCancelledError:
             logging.info("Lobby closed before game start")
             controller.ws_handler.close()
             controller.udp_handler.close_socket()
             controller.lobby_container_manager.stop()
+            delete_session_metadata()
             return controller
         except Exception as exc:
             logging.exception("Lobby failed before game start")
             controller.ws_handler.close()
             controller.udp_handler.close_socket()
             controller.lobby_container_manager.stop()
+            delete_session_metadata()
             lobby_screen.show_error(
                 title="Lobby connection failed",
                 message=str(exc),
@@ -233,6 +279,7 @@ def main(
             controller.run()
         finally:
             controller.lobby_container_manager.stop()
+            delete_session_metadata()
     elif role is PlayerRole.CLIENT and not use_discovery:
         controller.remote_host = host_ip or DEFAULT_HOST
         controller.ws_handler = WsHandler(host=host_ip or DEFAULT_HOST, port=LOBBY_WS_PORT)
@@ -252,22 +299,38 @@ def _drop_rate(value: str) -> float:
 
 if __name__ == "__main__":
     args = parse_args()
+    selected_role = None
+    host_ip = args.host_ip
+    session_id = args.session_id
+    local_ip = args.local_ip or _detect_local_ip()
+
     if args.host:
         selected_role = PlayerRole.HOST
     elif args.client:
         selected_role = PlayerRole.CLIENT
     else:
-        menu = MenuScreen()
-        selected_role = menu.prompt_role_selection()
-        menu.close()
-        if selected_role is None:
-            raise SystemExit(0)
+        lobby_screen = LobbyScreen()
+        try:
+            recovered = _try_recover_session(local_ip, lobby_screen=lobby_screen)
+        finally:
+            lobby_screen.close()
+
+        if recovered is not None:
+            host_ip, session_id = recovered
+            selected_role = PlayerRole.CLIENT
+        else:
+            menu = MenuScreen()
+            selected_role = menu.prompt_role_selection()
+            menu.close()
+            if selected_role is None:
+                raise SystemExit(0)
+
     main(
         run_app=True,
         role=selected_role,
         packet_drop_rate=args.drop_rate,
         artificial_latency_ms=args.latency,
-        host_ip=args.host_ip,
-        local_ip=args.local_ip,
-        session_id=args.session_id,
+        host_ip=host_ip,
+        local_ip=local_ip,
+        session_id=session_id,
     )
