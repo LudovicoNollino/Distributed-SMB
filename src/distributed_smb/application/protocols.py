@@ -21,8 +21,14 @@ class LobbyServiceProtocol(Protocol):
 
 @runtime_checkable
 class DiscoveryServiceProtocol(Protocol):
-    def announce(self, session_id: str, lobby_port: int) -> None: ...
+    def announce(
+        self,
+        session_id: str,
+        lobby_port: int,
+        allowed_ips: set[str] | None = None,
+    ) -> None: ...
     def discover(self, session_id: str, timeout: float = 5.0) -> tuple[str, int]: ...
+    def set_allowed_ips(self, allowed_ips: set[str] | None) -> None: ...
     def stop(self) -> None: ...
 
 
@@ -66,11 +72,19 @@ class NoopLobbyService:
 
 
 class NoopDiscoveryService:
-    def announce(self, session_id: str, lobby_port: int) -> None:
+    def announce(
+        self,
+        session_id: str,
+        lobby_port: int,
+        allowed_ips: set[str] | None = None,
+    ) -> None:
         pass
 
     def discover(self, session_id: str, timeout: float = 5.0) -> tuple[str, int]:
         return ("127.0.0.1", 50002)
+
+    def set_allowed_ips(self, allowed_ips: set[str] | None) -> None:
+        pass
 
     def stop(self) -> None:
         pass

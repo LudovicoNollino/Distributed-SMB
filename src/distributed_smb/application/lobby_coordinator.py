@@ -69,6 +69,12 @@ class LobbyMixin:
             if should_continue is False:
                 raise LobbyCancelledError("Lobby was closed before game start")
 
+    def _discovery_allowed_ips(self) -> set[str]:
+        allowed_ips = {entry.host for entry in self.roster.get_all_players() if entry.host}
+        if self.local_ip:
+            allowed_ips.add(self.local_ip)
+        return allowed_ips
+
     def _host_lobby_phase(
         self,
         *,
@@ -105,7 +111,11 @@ class LobbyMixin:
         self.session_id = created.session_id
         LOGGER.info("Session created: %s", self.session_id)
         if self.use_discovery:
-            self.discovery_service.announce(self.session_id, LOBBY_WS_PORT)
+            self.discovery_service.announce(
+                self.session_id,
+                LOBBY_WS_PORT,
+                allowed_ips=self._discovery_allowed_ips(),
+            )
         self._notify_lobby_update("Waiting for players", on_update)
 
         deadline = time.time() + LOBBY_TIMEOUT
@@ -113,6 +123,8 @@ class LobbyMixin:
             msg = self.ws_handler.poll()
             if isinstance(msg, RosterUpdate):
                 self.roster = msg.roster
+                if self.use_discovery and hasattr(self.discovery_service, "set_allowed_ips"):
+                    self.discovery_service.set_allowed_ips(self._discovery_allowed_ips())
             self._notify_lobby_update("Waiting for players", on_update)
             if start_requested is not None and start_requested() and self.roster.players:
                 LOGGER.info("Host manually requested game start")
@@ -122,6 +134,8 @@ class LobbyMixin:
         if not self.use_discovery:
             self.game_event_broker.launch()
             time.sleep(LOBBY_STARTUP_WAIT)
+        if self.use_discovery and hasattr(self.discovery_service, "set_allowed_ips"):
+            self.discovery_service.set_allowed_ips(self._discovery_allowed_ips())
         self._notify_lobby_update("Broadcasting game start", on_update)
         self.ws_handler.send(GameStart(session_id=self.session_id))
         self._poll_lobby(GameStart)

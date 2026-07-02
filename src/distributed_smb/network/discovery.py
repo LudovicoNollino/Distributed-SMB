@@ -3,6 +3,7 @@
 import logging
 import socket
 import threading
+from collections.abc import Iterable
 
 from distributed_smb.shared.config import DISCOVERY_UDP_PORT
 
@@ -27,13 +28,20 @@ class DiscoveryService:
         self._running = False
         self._thread: threading.Thread | None = None
         self._sock: socket.socket | None = None
+        self._allowed_ips: set[str] | None = None
 
-    def announce(self, session_id: str, lobby_port: int) -> None:
+    def announce(
+        self,
+        session_id: str,
+        lobby_port: int,
+        allowed_ips: Iterable[str] | None = None,
+    ) -> None:
         """Listen for discovery queries and respond with lobby_port.
 
         The client learns host_ip from the UDP packet source address.
         """
         self._running = True
+        self._allowed_ips = set(allowed_ips) if allowed_ips is not None else None
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("0.0.0.0", DISCOVERY_UDP_PORT))
@@ -52,14 +60,21 @@ class DiscoveryService:
             while self._running:
                 try:
                     data, addr = sock.recvfrom(256)
-                    if data == query:
-                        LOGGER.info(
-                            "[discovery] query from %s:%d → port %d",
+                    if data != query:
+                        continue
+                    if self._allowed_ips is not None and addr[0] not in self._allowed_ips:
+                        LOGGER.debug(
+                            "[discovery] ignoring query from unauthorized IP %s",
                             addr[0],
-                            addr[1],
-                            lobby_port,
                         )
-                        sock.sendto(response, addr)
+                        continue
+                    LOGGER.info(
+                        "[discovery] query from %s:%d → port %d",
+                        addr[0],
+                        addr[1],
+                        lobby_port,
+                    )
+                    sock.sendto(response, addr)
                 except TimeoutError:
                     continue
                 except OSError:
@@ -105,8 +120,12 @@ class DiscoveryService:
 
         raise TimeoutError("discovery timed out on all local interfaces")
 
+    def set_allowed_ips(self, allowed_ips: Iterable[str] | None) -> None:
+        self._allowed_ips = set(allowed_ips) if allowed_ips is not None else None
+
     def stop(self) -> None:
         self._running = False
+        self._allowed_ips = None
         if self._sock:
             self._sock.close()
             self._sock = None
