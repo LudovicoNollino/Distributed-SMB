@@ -75,6 +75,8 @@ class ElectionMixin:
                 msg.claimer_ip,
                 msg.claimer_join_index,
             )
+            self._following_host_ip = msg.claimer_ip
+            self._following_since = time.time()
             ack = ElectionAck(from_ip=self.local_ip, session_id=self.session_id)
             payload = json.dumps(self.serializer.encode_ws_message(ack)).encode()
             self.game_event_broker.send(payload)

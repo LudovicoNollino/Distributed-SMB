@@ -7,25 +7,28 @@ from copy import deepcopy
 from distributed_smb.application.election import (
     ElectionCoordinator,
     EnvironmentalStateBuffer,
-    FollowingHost,
     HostTimeoutWatcher,
     SelfElected,
 )
 from distributed_smb.shared.config import (
     GAME_EVENT_WS_PATH,
+    GAME_EVENT_WS_PORT,
     HOST_TIMEOUT_S,
+    HOST_UDP_PORT,
     PREDICTION_LEAD_CALIBRATION_FRAMES,
     PREDICTION_LEAD_DRIFT_TOLERANCE,
     PREDICTION_LEAD_EWMA_ALPHA,
     RECONCILE_GLIDE_RATE,
     RECONCILE_MAX_GLIDE_PX,
+    RECONNECTION_FALLBACK_TIMEOUT_S,
     T_ELECTION_BASE_S,
     T_ELECTION_DELTA_S,
 )
 from distributed_smb.shared.input import InputState
-from distributed_smb.shared.messages.election import ElectionAck, ElectionNack, ReconnectionAck
+from distributed_smb.shared.messages.election import ElectionNack, ReconnectionAck
 from distributed_smb.shared.messages.gameplay import PlayerInputPacket
 from distributed_smb.shared.messages.sync import InitialStateSync, WorldStateSnapshot
+from distributed_smb.shared.session_metadata import CachedPeer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -103,28 +106,55 @@ class ClientGameplayMixin:
                 LOGGER.info("election: self-elected as new host (ip=%s)", event.my_ip)
                 self._on_self_elected(event)
             self._tick_claim_deadline(now)
+            self._tick_reconnection_fallback(now)
+
+    def _tick_reconnection_fallback(self, now: float) -> None:
+        """Fall back to a direct UDP probe if ReconnectionAck never arrives.
+
+        ReconnectionAck normally relays through the crashed host's own relay
+        container — if that container went down with the host (e.g. a clean
+        shutdown that also stops it), a following peer would wait forever.
+        RecoveryProber talks UDP directly to the claimed candidate instead.
+        """
+        if self.reconnected or self._following_host_ip is None:
+            return
+        if now - self._following_since < RECONNECTION_FALLBACK_TIMEOUT_S:
+            return
+
+        candidate_ip = self._following_host_ip
+        # The candidate's own promotion (Docker containers, WS retries) can take
+        # much longer than one probe timeout — retry every interval instead of
+        # giving up after a single miss.
+        self._following_since = now
+        LOGGER.warning(
+            "election: no ReconnectionAck from %s after %.1fs — probing directly",
+            candidate_ip,
+            RECONNECTION_FALLBACK_TIMEOUT_S,
+        )
+        found_ip = self.recovery_prober.find_current_host(
+            self.session_id,
+            self.local_ip,
+            [CachedPeer(player_id="", ip=candidate_ip, join_index=-1)],
+            timeout_per_peer=1.5,
+        )
+        if found_ip is None:
+            LOGGER.warning(
+                "election: direct probe to %s got no response — will retry", candidate_ip
+            )
+            return
+        self._following_host_ip = None
+        self._on_reconnection_ack(
+            ReconnectionAck(
+                new_host_ip=found_ip,
+                udp_port=HOST_UDP_PORT,
+                game_events_port=GAME_EVENT_WS_PORT,
+                session_id=self.session_id,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Election event handlers (called from _drain_game_events)
     # ------------------------------------------------------------------
-
-    def _on_new_host_claim(self, msg) -> None:
-        """Handle an incoming NewHostClaim from a peer."""
-        if self.election_coordinator is None:
-            return
-        event = self.election_coordinator.on_new_host_claim(
-            claimer_join_index=msg.claimer_join_index,
-            claimer_ip=msg.claimer_ip,
-        )
-        if isinstance(event, FollowingHost):
-            LOGGER.info(
-                "election: following new host %s (join_index=%d)",
-                event.claimer_ip,
-                event.claimer_join_index,
-            )
-
-    def _on_election_ack(self, msg: ElectionAck) -> None:
-        pass
 
     def _on_election_nack(self, msg: ElectionNack) -> None:
         pass
@@ -174,9 +204,6 @@ class ClientGameplayMixin:
         self.prediction_lead_baseline = 0.0
         self.prediction_lead_calibration_remaining = PREDICTION_LEAD_CALIBRATION_FRAMES
         self.visual_correction_offset = (0.0, 0.0)
-
-    def _on_self_elected(self, event: SelfElected) -> None:
-        pass
 
     def _drain_lobby_messages(self) -> None:
         """Drain lobby WS messages during gameplay — handles InitialStateSync on rejoin."""

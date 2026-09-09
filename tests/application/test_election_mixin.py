@@ -12,6 +12,7 @@ from distributed_smb.shared.config import (
     ELECTION_CLAIM_TIMEOUT_S,
     GAME_EVENT_WS_PORT,
     HOST_UDP_PORT,
+    RECONNECTION_FALLBACK_TIMEOUT_S,
     T_ELECTION_BASE_S,
     T_ELECTION_DELTA_S,
 )
@@ -276,6 +277,100 @@ class TestOnNewHostClaim:
         nc._on_new_host_claim(msg)
 
         assert not broker.sent
+
+    def test_follower_records_following_state_for_fallback(self):
+        """Following a claim starts the ReconnectionAck fallback deadline."""
+        nc, _ = _make_controller(local_ip="10.0.0.3", local_player_id="player3", join_index=2)
+        nc.election_coordinator.start_election({"10.0.0.2"})
+        nc.election_coordinator.set_election_timer(time.time())
+
+        before = time.time()
+        msg = NewHostClaim(claimer_ip="10.0.0.2", claimer_join_index=1, session_id="test-session")
+        nc._on_new_host_claim(msg)
+
+        assert nc._following_host_ip == "10.0.0.2"
+        assert nc._following_since >= before
+
+
+# ---------------------------------------------------------------------------
+# _tick_reconnection_fallback — direct UDP probe when ReconnectionAck never
+# arrives because the crashed host's own relay went down with it.
+# ---------------------------------------------------------------------------
+
+
+class FakeRecoveryProber:
+    def __init__(self, found_ip: str | None) -> None:
+        self.found_ip = found_ip
+        self.calls: list = []
+
+    def find_current_host(self, session_id, requester_ip, peers, timeout_per_peer):
+        self.calls.append((session_id, requester_ip, list(peers), timeout_per_peer))
+        return self.found_ip
+
+
+class TestTickReconnectionFallback:
+    def test_no_action_before_timeout_elapses(self):
+        nc, _ = _make_controller()
+        prober = FakeRecoveryProber(found_ip="10.0.0.2")
+        nc.recovery_prober = prober
+        nc._following_host_ip = "10.0.0.2"
+        nc._following_since = time.time()
+
+        nc._tick_reconnection_fallback(time.time())
+
+        assert not prober.calls
+        assert nc.reconnected is False
+
+    def test_no_action_when_already_reconnected(self):
+        nc, _ = _make_controller()
+        prober = FakeRecoveryProber(found_ip="10.0.0.2")
+        nc.recovery_prober = prober
+        nc.reconnected = True
+        nc._following_host_ip = "10.0.0.2"
+        nc._following_since = time.time() - RECONNECTION_FALLBACK_TIMEOUT_S - 0.1
+
+        nc._tick_reconnection_fallback(time.time())
+
+        assert not prober.calls
+
+    def test_no_action_without_a_pending_follow(self):
+        nc, _ = _make_controller()
+        prober = FakeRecoveryProber(found_ip="10.0.0.2")
+        nc.recovery_prober = prober
+
+        nc._tick_reconnection_fallback(time.time())
+
+        assert not prober.calls
+
+    def test_probes_directly_after_timeout_and_completes_reconnection(self):
+        nc, _ = _make_controller()
+        prober = FakeRecoveryProber(found_ip="10.0.0.2")
+        nc.recovery_prober = prober
+        nc._following_host_ip = "10.0.0.2"
+        nc._following_since = time.time() - RECONNECTION_FALLBACK_TIMEOUT_S - 0.1
+
+        nc._tick_reconnection_fallback(time.time())
+
+        assert prober.calls
+        assert nc.reconnected is True
+        assert nc.remote_host == "10.0.0.2"
+        assert nc._following_host_ip is None
+
+    def test_retries_instead_of_giving_up_on_failed_probe(self):
+        """A failed probe (candidate not ready yet) keeps the follow state so
+        the next tick tries again, rather than stalling forever."""
+        nc, _ = _make_controller()
+        prober = FakeRecoveryProber(found_ip=None)
+        nc.recovery_prober = prober
+        nc._following_host_ip = "10.0.0.2"
+        nc._following_since = time.time() - RECONNECTION_FALLBACK_TIMEOUT_S - 0.1
+
+        now = time.time()
+        nc._tick_reconnection_fallback(now)
+
+        assert nc.reconnected is False
+        assert nc._following_host_ip == "10.0.0.2"
+        assert nc._following_since == pytest.approx(now, abs=0.5)
 
 
 # ---------------------------------------------------------------------------

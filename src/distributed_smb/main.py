@@ -43,6 +43,7 @@ def build_controller(
             game_event_broker=HttpGameEventBroker(),
             discovery_service=DiscoveryService(),
             lobby_container_manager=LobbyContainerManager(),
+            recovery_prober=RecoveryProber(),
             use_discovery=True,
             renderer=Renderer(),
             input_handler=InputHandler(),
@@ -51,6 +52,7 @@ def build_controller(
         controller = NodeController(
             game_event_broker=GameEventBroker(),
             lobby_service=LobbyService(),
+            recovery_prober=RecoveryProber(),
             renderer=Renderer(),
             input_handler=InputHandler(),
         )

@@ -164,6 +164,9 @@ class NodeController(
     _pending_election_acks: set = field(default_factory=set)
     _election_claim_deadline: float = 0.0
     _promotion_done: bool = False
+    # --- M8: reconnection fallback (relay-independent) ---
+    _following_host_ip: str | None = None
+    _following_since: float = 0.0
 
     def __post_init__(self) -> None:
         if isinstance(self.prediction_engine, NoopPredictionEngine):

@@ -65,6 +65,11 @@ T_ELECTION_DELTA_S = 0.3
 ELECTION_CLAIM_TIMEOUT_S = 2.0
 """Timeout (seconds) waiting for NewHostClaim from lower-indexed nodes."""
 
+RECONNECTION_FALLBACK_TIMEOUT_S = 4.0
+"""Seconds a following peer waits for ReconnectionAck (via the old host's relay)
+before falling back to a direct UDP probe of the claimed new host — the relay
+dies with the crashed host if its containers were on the same machine."""
+
 WINDOW_WIDTH = int(BASE_WINDOW_WIDTH * WORLD_SCALE)
 WINDOW_HEIGHT = int(BASE_WINDOW_HEIGHT * WORLD_SCALE)
 WINDOW_TITLE = "Distributed SMB"
