@@ -274,6 +274,9 @@ class TestHostMigration3Players:
         )
         candidate.timeout_watcher.reset(time.time() - HOST_TIMEOUT_S - 0.1)
         candidate._tick_election_state()
+        assert candidate.election_triggered is False  # verifying the host is really gone first
+        candidate._host_verify_deadline = time.time() - 0.1
+        candidate._tick_election_state()
         assert candidate.election_triggered is True
 
         candidate.election_coordinator.start_election({"10.0.0.3"})
@@ -343,6 +346,9 @@ class TestHostMigration4Players:
             peer.reconnected = False
             peer.remote_host = ""
             peer.remote_port = 0
+            # Both reconnect fake IPs are unreachable — skip the real retry loops.
+            peer._reconnect_game_event_handler = lambda *args, **kwargs: None
+            peer._reconnect_lobby_ws_handler = lambda *args, **kwargs: None
             peer._on_reconnection_ack(
                 ReconnectionAck(
                     new_host_ip="10.0.0.2",
@@ -375,6 +381,9 @@ class TestCascadingFallback:
 
         # Simulate the lower-index candidate crashing before it can finish its timer.
         secondary.timeout_watcher.reset(time.time() - HOST_TIMEOUT_S - 0.1)
+        secondary._tick_election_state()
+        assert secondary.election_triggered is False  # verifying the host is really gone first
+        secondary._host_verify_deadline = time.time() - 0.1
         secondary._tick_election_state()
         assert secondary.election_triggered is True
 

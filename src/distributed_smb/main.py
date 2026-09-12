@@ -334,6 +334,11 @@ def main(
                 return controller
             outcome = controller.run()
 
+        # Only reached on a clean quit (no exception) — a KeyboardInterrupt/crash
+        # here must NOT stop the containers: they need to survive so a promoted
+        # host can find them still running and reuse them (see
+        # LobbyContainerManager.start()). Stopping them unconditionally in a
+        # finally block raced the next host's own startup — see M8 decision log.
         controller.lobby_container_manager.stop()
         delete_session_metadata()
     elif role is PlayerRole.CLIENT and not use_discovery:

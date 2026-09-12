@@ -120,14 +120,25 @@ class WorldRenderer:
             DISPLAY_TILE_SIZE,
         )
         camera_x, camera_y = camera_offset
+        # Cull to the camera viewport before tiling: a level several screens
+        # wide (see checkpoint/decoration level design) means most platforms
+        # are off-screen at any given moment, and this loop tiles each one
+        # tile-by-tile (plus a per-partial-tile pygame.transform.scale() —
+        # a fresh surface allocation, not a cheap blit) — without culling,
+        # per-frame cost scales with total level width, not viewport size.
+        viewport = pygame.Rect(camera_x, camera_y, screen.get_width(), screen.get_height())
         if tile is None:
             for platform in platforms:
+                if not viewport.colliderect(platform):
+                    continue
                 pygame.draw.rect(
                     screen, self.owner.platform_color, platform.move(-camera_x, -camera_y)
                 )
             return
 
         for platform in platforms:
+            if not viewport.colliderect(platform):
+                continue
             for y in range(platform.top, platform.bottom, DISPLAY_TILE_SIZE):
                 for x in range(platform.left, platform.right, DISPLAY_TILE_SIZE):
                     width = min(DISPLAY_TILE_SIZE, platform.right - x)
@@ -145,8 +156,13 @@ class WorldRenderer:
         camera_offset: tuple[int, int],
         kinds: set[str],
     ) -> None:
+        camera_x, camera_y = camera_offset
+        viewport = pygame.Rect(camera_x, camera_y, screen.get_width(), screen.get_height())
         for decoration in frame.decorations:
             if decoration.kind not in kinds:
+                continue
+            deco_rect = pygame.Rect(decoration.x, decoration.y, decoration.width, decoration.height)
+            if not viewport.colliderect(deco_rect):
                 continue
             sprite = self._get_decoration_sprite(
                 decoration.kind, decoration.width, decoration.height

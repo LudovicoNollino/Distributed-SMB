@@ -15,6 +15,8 @@ from distributed_smb.shared.config import (
     GAME_EVENT_WS_PORT,
     HOST_TIMEOUT_S,
     HOST_UDP_PORT,
+    HOST_VERIFY_RESEND_INTERVAL_S,
+    HOST_VERIFY_TIMEOUT_S,
     PREDICTION_LEAD_CALIBRATION_FRAMES,
     PREDICTION_LEAD_DRIFT_TOLERANCE,
     PREDICTION_LEAD_EWMA_ALPHA,
@@ -25,8 +27,14 @@ from distributed_smb.shared.config import (
     T_ELECTION_DELTA_S,
 )
 from distributed_smb.shared.input import InputState
-from distributed_smb.shared.messages.election import ElectionNack, ReconnectionAck
+from distributed_smb.shared.messages.election import (
+    ElectionAck,
+    ElectionNack,
+    NewHostClaim,
+    ReconnectionAck,
+)
 from distributed_smb.shared.messages.gameplay import PlayerInputPacket
+from distributed_smb.shared.messages.recovery import HostDiscoveryProbe, HostIdentityResponse
 from distributed_smb.shared.messages.sync import InitialStateSync, WorldStateSnapshot
 from distributed_smb.shared.session_metadata import CachedPeer
 
@@ -93,12 +101,12 @@ class ClientGameplayMixin:
 
         now = time.time()
 
-        if not self.election_triggered and self.timeout_watcher.tick(now):
-            LOGGER.warning("host timeout detected — starting election")
-            self.election_triggered = True
-            peers = self._known_client_peers()
-            self.election_coordinator.start_election(peers)
-            self.election_coordinator.set_election_timer(now)
+        if self._host_verify_deadline == 0.0:
+            if not self.election_triggered and self.timeout_watcher.tick(now):
+                LOGGER.warning("host timeout suspected — verifying before starting election")
+                self._send_host_verify_probe(now)
+        else:
+            self._tick_host_verify(now)
 
         if self.election_triggered:
             event = self.election_coordinator.tick(now)
@@ -107,6 +115,55 @@ class ClientGameplayMixin:
                 self._on_self_elected(event)
             self._tick_claim_deadline(now)
             self._tick_reconnection_fallback(now)
+
+    def _send_host_verify_probe(self, now: float) -> None:
+        """Probe the suspected-dead host directly before trusting the local timeout.
+
+        A snapshot gap can come from a brief stall (GC pause, CPU contention
+        from other peers/containers sharing the machine, a network blip)
+        rather than an actual crash — observed in testing as a multi-second
+        game-loop freeze on an otherwise-healthy peer, immediately after a
+        migration, with no corresponding freeze on the real host. Confirming
+        via a direct probe avoids cascading into a false, conflicting
+        election off the back of that kind of transient delay.
+        """
+        self._host_verify_deadline = now + HOST_VERIFY_TIMEOUT_S
+        self._host_verify_next_probe = now
+        self._resend_host_verify_probe(now)
+
+    def _resend_host_verify_probe(self, now: float) -> None:
+        self._host_verify_next_probe = now + HOST_VERIFY_RESEND_INTERVAL_S
+        probe = HostDiscoveryProbe(session_id=self.session_id, requester_ip=self.local_ip)
+        self.udp_handler.send_packet_nowait(
+            self.serializer.encode_message(probe), self.remote_host, self.remote_port
+        )
+
+    def _tick_host_verify(self, now: float) -> None:
+        if not self.timeout_watcher.tick(now):
+            # A fresh snapshot (or a verify response, see _on_host_identity_response)
+            # arrived while we were waiting — the host is alive after all.
+            self._host_verify_deadline = 0.0
+            return
+        if now >= self._host_verify_deadline:
+            LOGGER.warning("host timeout confirmed — starting election")
+            self._host_verify_deadline = 0.0
+            self.election_triggered = True
+            peers = self._known_client_peers()
+            self.election_coordinator.start_election(peers)
+            self.election_coordinator.set_election_timer(now)
+            return
+        if now >= self._host_verify_next_probe:
+            self._resend_host_verify_probe(now)
+
+    def _on_host_identity_response(self, msg: HostIdentityResponse) -> None:
+        if self._host_verify_deadline == 0.0:
+            return
+        if msg.session_id != self.session_id:
+            return
+        LOGGER.info("election: host verify probe answered — host alive, election cancelled")
+        self._host_verify_deadline = 0.0
+        if self.timeout_watcher is not None:
+            self.timeout_watcher.reset(time.time())
 
     def _tick_reconnection_fallback(self, now: float) -> None:
         """Fall back to a direct UDP probe if ReconnectionAck never arrives.
@@ -169,6 +226,7 @@ class ClientGameplayMixin:
             ack.new_host_ip, ack.game_events_port, GAME_EVENT_WS_PATH
         )
         self.game_event_broker.reconnect(ack.new_host_ip, ack.game_events_port)
+        self._reconnect_lobby_ws_handler(ack.new_host_ip)
         LOGGER.info(
             "reconnected to new host %s (udp_port=%d, game_events_port=%d)",
             ack.new_host_ip,
@@ -196,6 +254,7 @@ class ClientGameplayMixin:
         self._election_claim_deadline = 0.0
         self.election_coordinator = None  # lazily re-created in _ensure_election_components
         self.timeout_watcher = HostTimeoutWatcher(timeout_s=HOST_TIMEOUT_S)
+        self._host_verify_deadline = 0.0
 
         # Reset prediction-lead calibration for the new host. The baseline was frozen
         # against the old host's RTT; the new host may be on a different machine with
@@ -313,7 +372,12 @@ class ClientGameplayMixin:
         self.client_frame_intervals.clear()
 
     def _drain_snapshot_packets(self) -> None:
-        """Poll incoming snapshots, reconcile predicted state, update shadow copies."""
+        """Poll incoming snapshots, reconcile predicted state, update shadow copies.
+
+        Also dispatches election/reconnection messages arriving here — these
+        travel over direct UDP (in addition to the WS relay) so surviving
+        peers can coordinate a host migration even if the relay is down.
+        """
         now = time.time()
         while True:
             packet = self.udp_handler.receive_packet_nowait()
@@ -321,6 +385,19 @@ class ClientGameplayMixin:
                 return
             payload, _address = packet
             decoded = self.serializer.decode_message(payload)
+
+            if isinstance(decoded, NewHostClaim):
+                self._on_new_host_claim(decoded)
+                continue
+            if isinstance(decoded, ElectionAck):
+                self._on_election_ack(decoded)
+                continue
+            if isinstance(decoded, ReconnectionAck):
+                self._on_reconnection_ack(decoded)
+                continue
+            if isinstance(decoded, HostIdentityResponse):
+                self._on_host_identity_response(decoded)
+                continue
             if not isinstance(decoded, WorldStateSnapshot):
                 continue
             if decoded.sequence_number <= self.last_snapshot_sequence:

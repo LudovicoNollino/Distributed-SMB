@@ -2,9 +2,11 @@
 
 import json
 import logging
+import threading
 import time
 
 from distributed_smb.application.election import FollowingHost, SelfElected
+from distributed_smb.network.ws_handler import WsHandler
 from distributed_smb.shared.config import (
     ELECTION_CLAIM_TIMEOUT_S,
     GAME_EVENT_WS_PORT,
@@ -24,6 +26,23 @@ class ElectionMixin:
     # Election handlers (override stubs in ClientGameplayMixin)
     # ------------------------------------------------------------------
 
+    def _send_election_message_udp(self, message, *, only_hosts: set[str] | None = None) -> None:
+        """Send an election/reconnection message directly over UDP to known
+        peers, in addition to the WS relay. The relay dies with a crashed
+        host if it was also running the relay container, which can leave
+        survivors unable to hear from each other at all (each self-elects
+        independently — split brain) — direct UDP doesn't depend on it,
+        since every peer already knows the others' UDP address from the
+        roster and keeps its own socket open regardless of who's host.
+        """
+        payload = self.serializer.encode_message(message)
+        for entry in self.roster.get_all_players():
+            if entry.player_id == self.local_player_id:
+                continue
+            if only_hosts is not None and entry.host not in only_hosts:
+                continue
+            self.udp_handler.send_packet_nowait(payload, entry.host, entry.udp_port)
+
     def _on_self_elected(self, event: SelfElected) -> None:
         peers = self._known_client_peers()
         if not peers:
@@ -38,6 +57,7 @@ class ElectionMixin:
         )
         payload = json.dumps(self.serializer.encode_ws_message(claim)).encode()
         self.game_event_broker.send(payload)
+        self._send_election_message_udp(claim, only_hosts=peers)
         self._pending_election_acks = set(peers)
         self._election_claim_deadline = time.time() + ELECTION_CLAIM_TIMEOUT_S
         LOGGER.info(
@@ -80,6 +100,7 @@ class ElectionMixin:
             ack = ElectionAck(from_ip=self.local_ip, session_id=self.session_id)
             payload = json.dumps(self.serializer.encode_ws_message(ack)).encode()
             self.game_event_broker.send(payload)
+            self._send_election_message_udp(ack, only_hosts={msg.claimer_ip})
 
     # ------------------------------------------------------------------
     # Claim deadline — called each frame from _tick_election_state
@@ -138,7 +159,8 @@ class ElectionMixin:
         # (promoted client was on an OS-assigned ephemeral port)
         self._rebuild_udp_as_host()
 
-        # Broadcast ReconnectionAck via relay while old server is still reachable
+        # Broadcast ReconnectionAck via relay and direct UDP — the relay may
+        # already be down if it ran on the crashed host's own machine.
         surviving_peers = [
             e for e in self.roster.get_all_players() if e.player_id != self.local_player_id
         ]
@@ -151,26 +173,50 @@ class ElectionMixin:
             )
             payload = json.dumps(self.serializer.encode_ws_message(ack_msg)).encode()
             self.game_event_broker.send(payload)
+            self._send_election_message_udp(ack_msg)
             LOGGER.info("election: ReconnectionAck broadcast to %d peer(s)", len(surviving_peers))
 
-        # Start own game event server:
-        # - in-process mode: promote_to_server() launches the FastAPI server
-        # - Docker/LAN mode: lobby_container_manager.start() brings up the containers,
-        #   then we redirect the HTTP broker at the local instance
+        # Own game event server: in-process mode launches the FastAPI server
+        # synchronously here (fast); Docker/LAN mode brings up containers in
+        # the background thread below (slow — must not freeze gameplay).
         self.game_event_broker.promote_to_server(GAME_EVENT_WS_PORT)
+
+        # Switch role now, before the slow re-registration below, so the frame
+        # loop starts draining UDP and broadcasting snapshots immediately.
+        self._finish_promotion()
+
+        self._relaunch_thread = threading.Thread(
+            target=self._relaunch_lobby_for_rejoin, name="lobby-relaunch", daemon=True
+        )
+        self._relaunch_thread.start()
+
+    def _relaunch_lobby_for_rejoin(self) -> None:
+        """Bring lobby/game-events infrastructure back up so recovering nodes can rejoin (M9).
+
+        Runs off the main thread deliberately: Docker container startup plus
+        the WS handshake retry loop below can take several seconds on
+        localhost and considerably longer across real, separate machines
+        (cold container pulls, network RTT). Running this synchronously
+        inside _promote_to_host() used to freeze the whole frame loop for
+        that entire window — the promoted node stopped draining UDP, so
+        surviving peers stopped receiving snapshots and falsely timed out
+        this node too, triggering a second, conflicting self-election
+        (split brain: two nodes both convinced they are the host).
+
+        Uses a local WsHandler instead of self.ws_handler until the handshake
+        finishes, so it never races with _check_for_rejoining_players()
+        polling the same handler concurrently from the main thread.
+        """
         self.lobby_container_manager.start()
         self.game_event_broker.reconnect("localhost", GAME_EVENT_WS_PORT)
 
-        # Start lobby and re-register the existing session so recovering nodes can rejoin (M9).
-        # Works in both Docker mode (LobbyContainerManager starts the container, then we
-        # connect via WS) and in-process mode (LobbyService starts uvicorn, same WS path).
         self.lobby_service.launch(port=LOBBY_WS_PORT)
         time.sleep(LOBBY_STARTUP_WAIT)
         try:
-            self._make_lobby_ws_client("localhost", LOBBY_WS_PORT)
+            lobby_ws = WsHandler(host="localhost", port=LOBBY_WS_PORT)
             for attempt in range(10):
                 try:
-                    self.ws_handler.connect(timeout=2.0)
+                    lobby_ws.connect(timeout=2.0)
                     break
                 except (ConnectionError, TimeoutError, OSError):
                     if attempt < 9:
@@ -183,7 +229,7 @@ class ElectionMixin:
                         raise
             all_players = self.roster.get_all_players()
             next_ji = (max(e.join_index for e in all_players) + 1) if all_players else 0
-            self.ws_handler.send(
+            lobby_ws.send(
                 SessionRecreate(
                     session_id=self.session_id,
                     next_join_index=next_ji,
@@ -195,11 +241,12 @@ class ElectionMixin:
             got_ack = False
             deadline = time.time() + 2.0
             while time.time() < deadline:
-                if isinstance(self.ws_handler.poll(), SessionCreated):
+                if isinstance(lobby_ws.poll(), SessionCreated):
                     LOGGER.info("election: lobby ready for rejoin (session=%s)", self.session_id)
                     got_ack = True
                     break
                 time.sleep(0.05)
+            self.ws_handler = lobby_ws
             if got_ack:
                 if self.use_discovery:
                     self.discovery_service.announce(self.session_id, LOBBY_WS_PORT)
@@ -216,6 +263,7 @@ class ElectionMixin:
                 exc,
             )
 
+    def _finish_promotion(self) -> None:
         # Give surviving peers a fresh grace period so _check_player_disconnections()
         # does not false-positive them out immediately (last_input_time was empty as client).
         now = time.time()

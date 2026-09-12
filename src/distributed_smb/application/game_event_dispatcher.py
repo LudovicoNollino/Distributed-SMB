@@ -92,8 +92,15 @@ class GameEventMixin:
                 if gate:
                     gate.state = msg.new_state
             elif isinstance(msg, PlayerLeft):
-                LOGGER.info("Player left (received): %s", msg.player_id)
-                self._evict_player(msg.player_id)
+                # A stray/premature eviction on the host's side (e.g. a UDP
+                # timeout misfiring right after a migration, before this
+                # node's redirected input has arrived) must not be allowed
+                # to make this node evict itself — that would permanently
+                # corrupt its own roster/world state even though it is
+                # still alive and playing.
+                if msg.player_id != self.local_player_id:
+                    LOGGER.info("Player left (received): %s", msg.player_id)
+                    self._evict_player(msg.player_id)
             elif isinstance(msg, PlayerDeathMessage):
                 LOGGER.info("Player died (received): %s by enemy %s", msg.player_id, msg.enemy_id)
                 self.engine.world_state.remove_player(msg.player_id)

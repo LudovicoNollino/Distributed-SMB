@@ -118,7 +118,14 @@ class Serializer:
 
     def encode_message(
         self,
-        payload: PlayerInputPacket | WorldStateSnapshot | HostDiscoveryProbe | HostIdentityResponse,
+        payload: PlayerInputPacket
+        | WorldStateSnapshot
+        | HostDiscoveryProbe
+        | HostIdentityResponse
+        | NewHostClaim
+        | ElectionAck
+        | ElectionNack
+        | ReconnectionAck,
     ) -> bytes:
         """Encode a gameplay packet to bytes ready for UDP transport."""
         return self.encode(payload).encode("utf-8")
@@ -126,7 +133,16 @@ class Serializer:
     def decode_message(
         self,
         payload: str | bytes,
-    ) -> PlayerInputPacket | WorldStateSnapshot | HostDiscoveryProbe | HostIdentityResponse:
+    ) -> (
+        PlayerInputPacket
+        | WorldStateSnapshot
+        | HostDiscoveryProbe
+        | HostIdentityResponse
+        | NewHostClaim
+        | ElectionAck
+        | ElectionNack
+        | ReconnectionAck
+    ):
         """Decode a UDP gameplay packet into its typed dataclass."""
         data = self.decode(payload)
         message_type = data.get("message_type")
@@ -160,6 +176,35 @@ class Serializer:
                 return HostIdentityResponse(
                     session_id=validated.session_id,
                     host_ip=validated.host_ip,
+                )
+
+            if message_type == MessageType.NEW_HOST_CLAIM:
+                validated = NewHostClaimSchema(**data)
+                return NewHostClaim(
+                    claimer_ip=validated.claimer_ip,
+                    claimer_join_index=validated.claimer_join_index,
+                    session_id=validated.session_id,
+                )
+
+            if message_type == MessageType.ELECTION_ACK:
+                validated = ElectionAckSchema(**data)
+                return ElectionAck(from_ip=validated.from_ip, session_id=validated.session_id)
+
+            if message_type == MessageType.ELECTION_NACK:
+                validated = ElectionNackSchema(**data)
+                return ElectionNack(
+                    from_ip=validated.from_ip,
+                    session_id=validated.session_id,
+                    reason=validated.reason,
+                )
+
+            if message_type == MessageType.RECONNECTION_ACK:
+                validated = ReconnectionAckSchema(**data)
+                return ReconnectionAck(
+                    new_host_ip=validated.new_host_ip,
+                    udp_port=validated.udp_port,
+                    game_events_port=validated.game_events_port,
+                    session_id=validated.session_id,
                 )
 
             raise DeserializationError(f"Unsupported UDP message type: {message_type}")

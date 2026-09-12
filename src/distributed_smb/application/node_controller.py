@@ -167,6 +167,11 @@ class NodeController(
     # --- M8: reconnection fallback (relay-independent) ---
     _following_host_ip: str | None = None
     _following_since: float = 0.0
+    # --- M8: verify-before-electing (avoid false positives from brief stalls) ---
+    _host_verify_deadline: float = 0.0
+    _host_verify_next_probe: float = 0.0
+    # --- M8: background lobby re-registration after promotion (see ElectionMixin) ---
+    _relaunch_thread: Any | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if isinstance(self.prediction_engine, NoopPredictionEngine):
@@ -381,22 +386,49 @@ class NodeController(
         self.udp_handler = UdpHandler(host="0.0.0.0", port=HOST_UDP_PORT)
 
     def _reconnect_game_event_handler(self, host: str, port: int, path: str) -> None:
-        """Replace the WebSocket event handler with a new connection to the given endpoint."""
+        """Replace the WebSocket event handler with a new connection to the given endpoint.
+
+        A single short attempt, not a blocking retry loop: this runs
+        synchronously inside a client's per-frame processing (called from
+        _on_reconnection_ack), so sleeping here would freeze the whole game
+        loop — including the local player's own input sending — for
+        however long the relay takes to become reachable. WsHandler.connect()
+        starts its background thread regardless of whether this call times
+        out, so a slow-starting relay still finishes connecting on its own;
+        we just don't block the frame waiting for it.
+        """
         self.game_event_handler.close()
         self.game_event_handler = WsHandler(host=host, port=port, path=path)
-        for attempt in range(6):
-            try:
-                self.game_event_handler.connect(timeout=2.0)
-                return
-            except (ConnectionError, TimeoutError):
-                if attempt < 5:
-                    LOGGER.info(
-                        "game event relay not ready (attempt %d/6), retrying in 1s…", attempt + 1
-                    )
-                    time.sleep(1.0)
-        LOGGER.warning(
-            "could not reconnect game event relay at %s:%d — continuing without relay", host, port
-        )
+        try:
+            self.game_event_handler.connect(timeout=0.5)
+        except (ConnectionError, TimeoutError):
+            LOGGER.info(
+                "game event relay at %s:%d not immediately reachable — connecting in background",
+                host,
+                port,
+            )
+
+    def _reconnect_lobby_ws_handler(self, host: str) -> None:
+        """Point the lobby WS connection at the new host after a migration.
+
+        _on_reconnection_ack() already redirects UDP and the game-events
+        channel, but the lobby channel was left dangling on the crashed
+        host — it dies (often silently) once that host's lobby container
+        stops, and nothing ever reconnected it afterwards.
+
+        Single short attempt, same reasoning as _reconnect_game_event_handler:
+        this must not block the client's per-frame loop.
+        """
+        self.ws_handler.close()
+        self._make_lobby_ws_client(host, LOBBY_WS_PORT)
+        try:
+            self.ws_handler.connect(timeout=0.5)
+        except (ConnectionError, TimeoutError, OSError):
+            LOGGER.info(
+                "lobby relay at %s:%d not immediately reachable — connecting in background",
+                host,
+                LOBBY_WS_PORT,
+            )
 
     def _load_game_app_class(self) -> type[Any] | None:
         """Load the optional Pygame runtime provided by the presentation layer."""

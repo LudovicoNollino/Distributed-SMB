@@ -275,6 +275,31 @@ def test_client_applies_player_left_event():
     assert client.roster.get_player("player1") is None
 
 
+def test_client_ignores_player_left_event_about_itself():
+    """A stray/premature PlayerLeft naming this node's own player_id must be
+    ignored — otherwise a false eviction broadcast by the host (e.g. a UDP
+    timeout misfiring right after a host migration) would make the node
+    evict itself, permanently corrupting its own roster/world state even
+    though it is still alive and playing."""
+    client = _make_post_lobby_client()
+    client.game_event_handler = _ge_handler(client.local_player_id)
+
+    assert client.local_player_id in client.engine.world_state.characters
+    assert client.roster.get_player(client.local_player_id) is not None
+
+    payload = json.dumps(
+        _serializer.encode_ws_message(PlayerLeft(player_id=client.local_player_id))
+    ).encode()
+    send_game_event(payload)
+    time.sleep(0.2)
+
+    client._drain_game_events()
+    client.game_event_handler.close()
+
+    assert client.local_player_id in client.engine.world_state.characters
+    assert client.roster.get_player(client.local_player_id) is not None
+
+
 def test_client_applies_block_destroyed_event():
     """Client marks a block as destroyed when it receives a BlockDestroyedMessage."""
     client = _make_post_lobby_client()

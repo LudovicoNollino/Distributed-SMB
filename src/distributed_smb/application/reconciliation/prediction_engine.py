@@ -3,7 +3,7 @@ import math
 import time
 from collections import deque
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Deque
 
 from distributed_smb.domain.game_engine import GameEngine
@@ -27,7 +27,6 @@ def _fmt_rtt(rtt_ms: float | None) -> str:
 class InputHistoryEntry:
     sequence_number: int
     input_state: InputState
-    predicted_state_snapshot: WorldState
     dt: float = TICK_INTERVAL
     sent_at: float = 0.0
 
@@ -41,16 +40,13 @@ class InputHistoryBuffer:
         self,
         sequence_number: int,
         input_state: InputState,
-        predicted_state_snapshot: WorldState,
         dt: float = TICK_INTERVAL,
         sent_at: float = 0.0,
     ) -> None:
-        snapshot = deepcopy(predicted_state_snapshot)
         self._entries.append(
             InputHistoryEntry(
                 sequence_number=sequence_number,
                 input_state=input_state,
-                predicted_state_snapshot=snapshot,
                 dt=dt,
                 sent_at=sent_at,
             )
@@ -88,9 +84,7 @@ class PredictionEngine:
 
     def predict(self, input_state: InputState, dt: float = TICK_INTERVAL) -> None:
         next_seq = self.engine.world_state.sequence_number + 1
-        self.buffer.push(
-            next_seq, input_state, self.engine.world_state, dt, sent_at=self.time_provider()
-        )
+        self.buffer.push(next_seq, input_state, dt, sent_at=self.time_provider())
 
     def reconcile(self, authoritative_snapshot: WorldStateSnapshot) -> None:
         world_state = authoritative_snapshot.world_state
@@ -109,7 +103,22 @@ class PredictionEngine:
         # so they must be taken from the authoritative snapshot, or client
         # and host would diverge forever with no resync path.
         local_env = self.engine.world_state.environment
-        self.engine.world_state = deepcopy(world_state)
+        # reconcile() runs once per received snapshot (up to 60/s, more when
+        # draining a backlog after a stall). deepcopy()-ing the *entire*
+        # authoritative WorldState here — including destructible_blocks/
+        # power_ups/cooperative_gates — used to pay for a full deep copy of
+        # those collections only to immediately discard them three lines
+        # below in favor of the client's own locally-predicted copies. Only
+        # characters and enemies are actually kept from the snapshot *and*
+        # get mutated during the replay below, so only those need copying;
+        # everything else can be shared by reference.
+        self.engine.world_state = replace(
+            world_state,
+            characters=deepcopy(world_state.characters),
+            environment=replace(
+                world_state.environment, enemies=deepcopy(world_state.environment.enemies)
+            ),
+        )
         self.engine.world_state.environment.destructible_blocks = local_env.destructible_blocks
         self.engine.world_state.environment.power_ups = local_env.power_ups
         self.engine.world_state.environment.cooperative_gates = local_env.cooperative_gates
@@ -199,4 +208,3 @@ class PredictionEngine:
     def _replay_pending(self, pending_inputs: list[InputHistoryEntry]) -> None:
         for entry in pending_inputs:
             self.engine.tick(entry.dt, {self.local_player_id: entry.input_state})
-            entry.predicted_state_snapshot = deepcopy(self.engine.world_state)

@@ -26,7 +26,14 @@ GAME_EVENT_WS_PATH = "/game-events"
 DISCOVERY_UDP_PORT = 59099
 
 # Player disconnect detection
-UDP_INPUT_TIMEOUT = 5.0  # seconds without UDP input before a peer is considered gone
+UDP_INPUT_TIMEOUT = 10.0
+"""Seconds without a UDP input packet before the host considers a peer gone
+and evicts it (_check_player_disconnections). Kept well above the ~5.6s
+worst-case stall observed on a single machine running 3 game processes: the
+peer's own process can freeze for that long (CPU contention, not an actual
+disconnect), during which it sends nothing — evicting it that fast turns a
+transient stall into a permanent, unrecoverable loss of that player from the
+authoritative simulation, since nothing re-adds it short of a full M9 rejoin."""
 GAME_EVENT_HEARTBEAT_INTERVAL = 5.0  # seconds between WebSocket heartbeat pings
 
 # Lobby coordination timings
@@ -64,6 +71,21 @@ T_ELECTION_DELTA_S = 0.3
 
 ELECTION_CLAIM_TIMEOUT_S = 2.0
 """Timeout (seconds) waiting for NewHostClaim from lower-indexed nodes."""
+
+HOST_VERIFY_TIMEOUT_S = 10.0
+"""Seconds to wait for a HostIdentityResponse before trusting a HOST_TIMEOUT_S
+expiry and starting an election. A snapshot gap can come from a brief stall
+(GC pause, CPU contention from other peers/containers on the same machine,
+a network blip) rather than an actual crash — a direct probe confirms the
+host is really gone before paying the cost of a full election. Set this high
+(observed stalls on a single machine running 3 game processes reached ~5.6s)
+rather than tuned tight, since a missed genuine crash just costs a few extra
+seconds of detection, while a too-short window still lets stalls cascade
+into a false, conflicting election — the far more disruptive failure mode."""
+
+HOST_VERIFY_RESEND_INTERVAL_S = 0.5
+"""Resend the verify probe at this cadence in case the probe or its reply
+is lost — UDP is unreliable and we only get one HOST_VERIFY_TIMEOUT_S window."""
 
 RECONNECTION_FALLBACK_TIMEOUT_S = 4.0
 """Seconds a following peer waits for ReconnectionAck (via the old host's relay)

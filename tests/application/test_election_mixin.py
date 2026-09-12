@@ -5,13 +5,20 @@ import time
 
 import pytest
 
-from distributed_smb.application.election import ElectionCoordinator, EnvironmentalStateBuffer
+from distributed_smb.application.election import (
+    ElectionCoordinator,
+    EnvironmentalStateBuffer,
+    HostTimeoutWatcher,
+)
 from distributed_smb.application.node_controller import NodeController
 from distributed_smb.domain.world import CharacterState
+from distributed_smb.network.udp_handler import UdpHandler
 from distributed_smb.shared.config import (
     ELECTION_CLAIM_TIMEOUT_S,
     GAME_EVENT_WS_PORT,
+    HOST_TIMEOUT_S,
     HOST_UDP_PORT,
+    HOST_VERIFY_TIMEOUT_S,
     RECONNECTION_FALLBACK_TIMEOUT_S,
     T_ELECTION_BASE_S,
     T_ELECTION_DELTA_S,
@@ -19,6 +26,7 @@ from distributed_smb.shared.config import (
 from distributed_smb.shared.enums import MessageType, PlayerRole
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.election import ElectionAck, NewHostClaim
+from distributed_smb.shared.messages.recovery import HostIdentityResponse
 from distributed_smb.shared.messages.session import SessionCreated, SessionRecreate
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
@@ -253,6 +261,100 @@ class TestOnElectionAck:
 
 
 # ---------------------------------------------------------------------------
+# Election/reconnection messages must also travel over direct UDP — the WS
+# relay dies with a crashed host if it ran the relay container locally,
+# which can leave survivors with no way to hear from each other at all
+# (each self-elects independently — split brain) unless UDP works too.
+# ---------------------------------------------------------------------------
+
+
+class SpyUdpHandler:
+    def __init__(self) -> None:
+        self.sent: list[tuple[bytes, str, int]] = []
+
+    def send_packet_nowait(self, payload: bytes, remote_host: str, remote_port: int) -> None:
+        self.sent.append((payload, remote_host, remote_port))
+
+    def receive_packet_nowait(self):
+        return None
+
+    def open_socket(self) -> None:
+        pass
+
+    def close_socket(self) -> None:
+        pass
+
+
+class TestElectionMessagesSentDirectlyOverUdp:
+    def test_new_host_claim_broadcast_over_udp_to_all_peers(self):
+        from distributed_smb.application.election import SelfElected
+
+        nc, _ = _make_controller(local_ip="10.0.0.2", local_player_id="player2", join_index=1)
+        nc.roster.add_player(
+            RosterEntry(player_id="player3", host="10.0.0.3", udp_port=50013, join_index=2)
+        )
+        spy = SpyUdpHandler()
+        nc.udp_handler = spy
+
+        event = SelfElected(my_ip="10.0.0.2")
+        nc._on_self_elected(event)
+
+        # Only the surviving client peer — _known_client_peers() deliberately
+        # excludes the (crashed) current host.
+        targets = {(host, port) for _, host, port in spy.sent}
+        assert targets == {("10.0.0.3", 50013)}
+        for payload, _, _ in spy.sent:
+            decoded = nc.serializer.decode_message(payload)
+            assert isinstance(decoded, NewHostClaim)
+            assert decoded.claimer_ip == "10.0.0.2"
+
+    def test_election_ack_sent_directly_only_to_claimer(self):
+        nc, _ = _make_controller(local_ip="10.0.0.3", local_player_id="player3", join_index=2)
+        nc.roster.add_player(
+            RosterEntry(player_id="player2", host="10.0.0.2", udp_port=50012, join_index=1)
+        )
+        nc.election_coordinator.start_election({"10.0.0.2"})
+        nc.election_coordinator.set_election_timer(time.time())
+        spy = SpyUdpHandler()
+        nc.udp_handler = spy
+
+        msg = NewHostClaim(claimer_ip="10.0.0.2", claimer_join_index=1, session_id="test-session")
+        nc._on_new_host_claim(msg)
+
+        assert len(spy.sent) == 1
+        payload, host, port = spy.sent[0]
+        assert (host, port) == ("10.0.0.2", 50012)
+        decoded = nc.serializer.decode_message(payload)
+        assert isinstance(decoded, ElectionAck)
+        assert decoded.from_ip == "10.0.0.3"
+
+    def test_reconnection_ack_sent_directly_after_promotion(self, monkeypatch):
+        from distributed_smb.network.udp_handler import UdpHandler
+        from distributed_smb.shared.messages.election import ReconnectionAck
+
+        sent: list[tuple[bytes, str, int]] = []
+
+        def spy_send(self, payload, remote_host, remote_port):
+            sent.append((payload, remote_host, remote_port))
+
+        monkeypatch.setattr(UdpHandler, "send_packet_nowait", spy_send)
+
+        nc, _ = _make_controller(local_ip="10.0.0.2", local_player_id="player2", join_index=1)
+        nc.roster.add_player(
+            RosterEntry(player_id="player3", host="10.0.0.3", udp_port=50013, join_index=2)
+        )
+
+        nc._promote_to_host()
+
+        acks = [
+            nc.serializer.decode_message(payload) for payload, host, _ in sent if host == "10.0.0.3"
+        ]
+        reconnection_acks = [ack for ack in acks if isinstance(ack, ReconnectionAck)]
+        assert len(reconnection_acks) == 1
+        assert reconnection_acks[0].new_host_ip == "10.0.0.2"
+
+
+# ---------------------------------------------------------------------------
 # _on_new_host_claim
 # ---------------------------------------------------------------------------
 
@@ -371,6 +473,68 @@ class TestTickReconnectionFallback:
         assert nc.reconnected is False
         assert nc._following_host_ip == "10.0.0.2"
         assert nc._following_since == pytest.approx(now, abs=0.5)
+
+
+# ---------------------------------------------------------------------------
+# _tick_election_state — verify-before-electing
+# ---------------------------------------------------------------------------
+
+
+class TestTickElectionStateHostVerify:
+    """A snapshot gap alone must not trigger an election — see HOST_VERIFY_TIMEOUT_S:
+    a direct probe confirms the host is really gone first, since a brief stall
+    (GC pause, CPU contention from other peers/containers on the same machine)
+    can otherwise look identical to a crash."""
+
+    def test_timeout_sends_probe_instead_of_electing_immediately(self, monkeypatch):
+        nc, _ = _make_controller()
+        nc.timeout_watcher = HostTimeoutWatcher(timeout_s=HOST_TIMEOUT_S)
+        nc.timeout_watcher.reset(time.time() - HOST_TIMEOUT_S - 0.1)
+
+        sent: list[tuple[str, int]] = []
+        monkeypatch.setattr(
+            UdpHandler,
+            "send_packet_nowait",
+            lambda self, payload, host, port: sent.append((host, port)),
+        )
+
+        nc._tick_election_state()
+
+        assert nc.election_triggered is False
+        assert nc._host_verify_deadline != 0.0
+        assert sent == [(nc.remote_host, nc.remote_port)]
+
+    def test_verify_response_cancels_the_election(self, monkeypatch):
+        nc, _ = _make_controller()
+        nc.timeout_watcher = HostTimeoutWatcher(timeout_s=HOST_TIMEOUT_S)
+        nc.timeout_watcher.reset(time.time() - HOST_TIMEOUT_S - 0.1)
+        monkeypatch.setattr(UdpHandler, "send_packet_nowait", lambda self, *a, **kw: None)
+
+        nc._tick_election_state()
+        assert nc._host_verify_deadline != 0.0
+
+        nc._on_host_identity_response(
+            HostIdentityResponse(session_id=nc.session_id, host_ip=nc.remote_host)
+        )
+
+        assert nc._host_verify_deadline == 0.0
+        nc._tick_election_state()
+        assert nc.election_triggered is False
+
+    def test_no_response_within_window_starts_the_election(self, monkeypatch):
+        nc, _ = _make_controller()
+        nc.timeout_watcher = HostTimeoutWatcher(timeout_s=HOST_TIMEOUT_S)
+        nc.timeout_watcher.reset(time.time() - HOST_TIMEOUT_S - 0.1)
+        monkeypatch.setattr(UdpHandler, "send_packet_nowait", lambda self, *a, **kw: None)
+
+        nc._tick_election_state()
+        assert nc.election_triggered is False
+
+        nc._host_verify_deadline = time.time() - HOST_VERIFY_TIMEOUT_S - 0.1
+        nc._tick_election_state()
+
+        assert nc.election_triggered is True
+        assert nc._host_verify_deadline == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -502,8 +666,13 @@ class TestPromoteToHost:
         sent_types = [json.loads(p).get("message_type") for p in broker.sent]
         assert MessageType.RECONNECTION_ACK.value not in sent_types
 
-    def test_promote_to_host_launches_lobby_and_sends_session_recreate(self):
-        """After promotion, lobby is started and SESSION_RECREATE is sent via ws_handler (M9)."""
+    def test_promote_to_host_launches_lobby_and_sends_session_recreate(self, monkeypatch):
+        """After promotion, lobby is started and SESSION_RECREATE is sent via ws_handler (M9).
+
+        The lobby re-registration (Docker/lobby WS handshake) runs on a
+        background thread so it never freezes the frame loop — join it here
+        to make the assertions deterministic instead of racing it.
+        """
 
         class SpyLobbyService:
             def __init__(self):
@@ -516,21 +685,17 @@ class TestPromoteToHost:
         spy_lobby = SpyLobbyService()
         nc.lobby_service = spy_lobby
 
-        # Capture the FakeWsHandler that _make_lobby_ws_client will assign.
-        captured: list = []
-
-        def capturing_make(host, port):
-            fw = FakeWsHandler()
-            nc.ws_handler = fw
-            captured.append(fw)
-
-        nc._make_lobby_ws_client = capturing_make
+        fake_ws = FakeWsHandler()
+        monkeypatch.setattr(
+            "distributed_smb.application.election_mixin.WsHandler",
+            lambda *args, **kwargs: fake_ws,
+        )
 
         nc._promote_to_host()
+        nc._relaunch_thread.join(timeout=2.0)
 
         assert spy_lobby.launched
-        assert captured, "FakeWsHandler was never assigned"
-        fake_ws = captured[0]
+        assert nc.ws_handler is fake_ws
         assert len(fake_ws.sent) == 1
         msg = fake_ws.sent[0]
         assert isinstance(msg, SessionRecreate)
