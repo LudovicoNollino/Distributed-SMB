@@ -47,10 +47,12 @@ class _SpyPredictionEngine:
 
     def __init__(self):
         self.predict_calls: list[InputState] = []
+        self.predict_dts: list[float] = []
         self.reconcile_calls: list[WorldStateSnapshot] = []
 
     def predict(self, input_state: InputState, dt: float) -> None:
         self.predict_calls.append(input_state)
+        self.predict_dts.append(dt)
 
     def reconcile(self, authoritative_snapshot: WorldStateSnapshot) -> None:
         self.reconcile_calls.append(authoritative_snapshot)
@@ -147,6 +149,23 @@ def test_predict_receives_the_exact_input_passed_to_process_frame():
 
     assert spy.predict_calls[0].left is True
     assert spy.predict_calls[0].jump is True
+
+
+def test_predict_uses_fixed_tick_interval_regardless_of_real_frame_dt():
+    """predict()/engine.tick() must always integrate physics by TICK_INTERVAL,
+    never by the real (variable) frame dt — apply_physics() scales gravity and
+    velocity by dt, so a client replaying a tick with a different dt than the
+    host actually used for that same tick would diverge, compounding into
+    large corrections over a jump arc (observed in real testing)."""
+    nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    spy = _SpyPredictionEngine()
+    nc.prediction_engine = spy
+    nc.udp_handler = _FakeUdpHandler()
+
+    # A slow, contended frame — far from the fixed 1/60 tick interval.
+    nc.process_frame(0.2, InputState(right=True))
+
+    assert spy.predict_dts == [TICK_INTERVAL]
 
 
 def test_predict_not_called_on_host_frame():

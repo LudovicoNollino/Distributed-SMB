@@ -1,8 +1,10 @@
 """Host-side frame synchronisation mixin."""
 
+import json
 import logging
 import time
 
+from distributed_smb.shared.config import TICK_INTERVAL
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.gameplay import PlayerInputPacket
 from distributed_smb.shared.messages.recovery import HostDiscoveryProbe, HostIdentityResponse
@@ -13,6 +15,9 @@ LOGGER = logging.getLogger(__name__)
 
 # Number of host frames between diagnostic frame-timing log lines.
 HOST_DIAG_LOG_INTERVAL = 120
+
+# Number of host frames between roster broadcasts to all clients.
+HOST_ROSTER_BROADCAST_INTERVAL = 120
 
 
 LOGGER = logging.getLogger(__name__)
@@ -134,13 +139,34 @@ class HostGameplayMixin:
         self._check_player_disconnections()
         self.host_input_packets_window += self._drain_remote_input_packets()
         authoritative_inputs = self._build_host_inputs(local_input)
-        self.engine.tick(dt, authoritative_inputs)
+        # Fixed simulation step, not the real (variable) frame dt: apply_physics()
+        # integrates gravity/velocity as GRAVITY*dt and vy*dt, so a client
+        # replaying the same tick with a different dt than this host actually
+        # used for it would diverge — proportionally to the dt gap, compounding
+        # over a jump arc. Both sides must integrate every tick by the exact
+        # same fixed amount for prediction and authority to ever agree.
+        self.engine.tick(TICK_INTERVAL, authoritative_inputs)
         for event in self.engine.events:
             self._send_game_event(event)
         self.engine.events.clear()
         self.host_last_payload_bytes = self._send_world_state_snapshot()
+        self._maybe_broadcast_roster()
         self._maybe_log_host_diagnostics()
         return self.engine.world_state
+
+    def _maybe_broadcast_roster(self) -> None:
+        """Periodically publish the authoritative roster to every client.
+
+        Only the host learns about a node that rejoins mid-session; without
+        this the peers already in game never hear about it, and on the next
+        host crash each survivor sees an empty peer set and promotes itself.
+        """
+        if self.sent_snapshots % HOST_ROSTER_BROADCAST_INTERVAL != 0:
+            return
+        payload = json.dumps(
+            self.serializer.encode_ws_message(RosterUpdate(roster=self.roster))
+        ).encode()
+        self.game_event_broker.send(payload)
 
     def _record_host_frame_interval(self) -> None:
         """Track wall-clock time between consecutive host frames."""

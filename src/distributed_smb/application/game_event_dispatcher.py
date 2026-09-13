@@ -20,6 +20,7 @@ from distributed_smb.shared.messages.gameplay import (
     PlayerLeft,
     PowerUpCollectedMessage,
 )
+from distributed_smb.shared.messages.session import RosterUpdate
 
 LOGGER = logging.getLogger(__name__)
 
@@ -123,3 +124,20 @@ class GameEventMixin:
             elif isinstance(msg, ReconnectionAck):
                 LOGGER.info("election: ReconnectionAck from new host %s", msg.new_host_ip)
                 self._on_reconnection_ack(msg)
+            elif isinstance(msg, RosterUpdate):
+                self._merge_roster(msg.roster)
+
+    def _merge_roster(self, roster) -> None:
+        """Learn about peers that joined after this node built its own roster.
+
+        A node that rejoins mid-session only gets the roster the lobby knows,
+        and peers already in game are never told about it — so on the next host
+        crash each one sees no peers and promotes itself. Merge is additive:
+        evictions travel via PlayerLeft and must not be undone here.
+        """
+        known = {e.join_index for e in self.roster.get_all_players()}
+        for entry in roster.get_all_players():
+            if entry.join_index in known or entry.player_id == self.local_player_id:
+                continue
+            self.roster.add_player(entry)
+            LOGGER.info("roster: learned %s (join_index=%d)", entry.player_id, entry.join_index)

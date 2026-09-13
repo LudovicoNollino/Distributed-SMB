@@ -148,3 +148,26 @@ def test_prediction_engine_acknowledge_clears_confirmed_inputs():
 
     # Only input 2 (seq=2) remains pending
     assert len(pe.buffer.get_unacknowledged()) == 1
+
+
+def test_reconcile_drops_input_history_orphaned_by_a_host_migration():
+    """A new host resumes from an older snapshot, so inputs buffered against the
+    old timeline can never be acknowledged: they must be dropped instead of
+    pinning the client a full buffer ahead of the authoritative sequence."""
+    engine = GameEngine()
+    engine.spawn_player("player1")
+    pe = PredictionEngine(engine=engine, local_player_id="player1", history_capacity=60)
+
+    # Client ran ahead locally while the old host was gone.
+    engine.world_state.sequence_number = 2384
+    for _ in range(60):
+        pe.predict(InputState(right=True), TICK_INTERVAL)
+        engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
+    assert pe.pending_count() == 60
+
+    authoritative = deepcopy(engine.world_state)
+    authoritative.sequence_number = 1450
+    pe.reconcile(_make_snapshot(authoritative))
+
+    assert pe.pending_count() == 0
+    assert engine.world_state.sequence_number == 1450

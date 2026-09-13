@@ -25,6 +25,7 @@ from distributed_smb.shared.config import (
     RECONNECTION_FALLBACK_TIMEOUT_S,
     T_ELECTION_BASE_S,
     T_ELECTION_DELTA_S,
+    TICK_INTERVAL,
 )
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.election import (
@@ -234,6 +235,30 @@ class ClientGameplayMixin:
             ack.game_events_port,
         )
 
+        # Resync locally-predicted environment state (destructible blocks,
+        # power-ups, cooperative gates) against the last known-good pre-crash
+        # snapshot. reconcile() deliberately never overwrites these three
+        # fields from an authoritative snapshot (see M4) to avoid visual
+        # pop-in when this node predicts a block break locally — but that
+        # also means a BlockDestroyedMessage/game event lost during the
+        # crash window (the WS relay can die with the old host) leaves this
+        # node's local copy permanently diverged from every other survivor.
+        # The newly promoted host restores this exact same buffered snapshot
+        # via bootstrap_from_snapshot(); applying it here too keeps every
+        # surviving client in agreement with it at the moment of migration.
+        if self.env_state_buffer is not None:
+            last = self.env_state_buffer.get_last()
+            if last is not None:
+                env = last.world_state.environment
+                self.engine.world_state.environment.destructible_blocks = env.destructible_blocks
+                self.engine.world_state.environment.power_ups = env.power_ups
+                self.engine.world_state.environment.cooperative_gates = env.cooperative_gates
+
+        # The new host resumes from its own last buffered snapshot, whose sequence
+        # can be lower than the last one this client saw — without this reset every
+        # snapshot from it would be discarded as stale and never reconciled.
+        self.last_snapshot_sequence = 0
+
         # Sync local roster: evict the crashed host and promote the newly elected one.
         # Without this, _known_client_peers() would still see the old host as a peer
         # and _promote_to_host() would evict the wrong entry in any future election.
@@ -286,14 +311,22 @@ class ClientGameplayMixin:
         """Predict and tick the engine, applying any pending drift correction."""
         ticks = 1 + self.pending_tick_adjustment
         self.pending_tick_adjustment = 0
+        # Fixed simulation step, not the real (variable) frame dt: apply_physics()
+        # integrates gravity/velocity as GRAVITY*dt and vy*dt. _replay_pending()
+        # later re-ticks these same buffered inputs against the authoritative
+        # host's own ticks for the same sequence numbers — if this client used
+        # a different dt than the host did for "the same" tick (near-certain
+        # with two independently wall-clock-timed frame loops, especially
+        # under CPU contention), the two diverge, compounding over a jump arc
+        # into the large, frequent reconciliation corrections seen in testing.
         for _ in range(ticks):
-            self.prediction_engine.predict(local_input, dt)
-            self.engine.tick(dt, {self.local_player_id: local_input})
+            self.prediction_engine.predict(local_input, TICK_INTERVAL)
+            self.engine.tick(TICK_INTERVAL, {self.local_player_id: local_input})
 
     def _adjust_prediction_lead(self) -> None:
         """Track the prediction lead and correct clock drift against the host."""
         pending = self.prediction_engine.pending_count()
-        baseline = self.prediction_lead_baseline or float(pending)
+        baseline = self.prediction_lead_baseline
         deviation = pending - baseline
 
         if deviation > PREDICTION_LEAD_DRIFT_TOLERANCE:

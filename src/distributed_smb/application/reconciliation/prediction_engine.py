@@ -62,6 +62,9 @@ class InputHistoryBuffer:
     def get_unacknowledged(self) -> list[InputHistoryEntry]:
         return list(self._entries)
 
+    def clear(self) -> None:
+        self._entries.clear()
+
     def find(self, sequence_number: int) -> InputHistoryEntry | None:
         for entry in self._entries:
             if entry.sequence_number == sequence_number:
@@ -97,6 +100,17 @@ class PredictionEngine:
 
         last_acknowledged = self.buffer.acknowledge(world_state.sequence_number)
         pending_inputs = self.buffer.get_unacknowledged()
+        if client_seq_before > world_state.sequence_number + self.buffer.capacity:
+            # Buffered inputs belong to a timeline the authoritative sequence can
+            # no longer reach (a new host resumes from an older snapshot): they
+            # would never be acknowledged, pinning the client a full buffer ahead.
+            self.buffer.clear()
+            pending_inputs = []
+            LOGGER.info(
+                "reconcile: dropped stale input history (client_seq=%d host_seq=%d)",
+                client_seq_before,
+                world_state.sequence_number,
+            )
         # Blocks/power-ups/gates are managed exclusively by WS events, so the
         # UDP snapshot must not override the client's local prediction of
         # them. Enemies have no dedicated WS event (they move continuously)

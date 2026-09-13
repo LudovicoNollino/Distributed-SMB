@@ -1,5 +1,7 @@
 from distributed_smb.application.node_controller import NodeController
+from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.network.serializer import Serializer
+from distributed_smb.shared.config import TICK_INTERVAL
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.gameplay import PlayerInputPacket
 from distributed_smb.shared.messages.recovery import HostDiscoveryProbe, HostIdentityResponse
@@ -183,3 +185,28 @@ def test_check_for_rejoining_players_noop_when_no_new_joiners():
     before = len(controller.roster.get_all_players())
     controller._check_for_rejoining_players()
     assert len(controller.roster.get_all_players()) == before
+
+
+def test_process_host_frame_ticks_engine_at_fixed_interval(monkeypatch):
+    """_process_host_frame() must tick the engine by TICK_INTERVAL, never by
+    the real (variable) frame dt — apply_physics() scales gravity/velocity by
+    dt, so a client replaying the same tick with a different dt than the host
+    actually used for it diverges, compounding into the large, frequent
+    reconciliation corrections observed in real testing after a migration."""
+    controller = NodeController()
+    controller.local_player_id = "player1"
+    controller.udp_handler = FakeUdpHandler([])
+    controller.ws_handler = FakeWsHandler([])
+
+    recorded_dts: list[float] = []
+    original_tick = GameEngine.tick
+
+    def spy_tick(self, dt, inputs):
+        recorded_dts.append(dt)
+        return original_tick(self, dt, inputs)
+
+    monkeypatch.setattr(GameEngine, "tick", spy_tick)
+
+    controller._process_host_frame(0.2, InputState())
+
+    assert recorded_dts == [TICK_INTERVAL]

@@ -546,3 +546,16 @@ def test_adjust_prediction_lead_walks_frozen_baseline_toward_sustained_drift():
         controller._adjust_prediction_lead()
 
     assert controller.prediction_lead_baseline == 5.0
+
+
+def test_adjust_prediction_lead_drains_backlog_after_reconnection_reset():
+    """A fresh baseline (0.0, set by _on_reconnection_ack) must not be seeded
+    from the current pending count — a post-migration backlog would then be
+    treated as the new normal and never drain."""
+    controller = NodeController()
+    controller.prediction_lead_baseline = 0.0
+    controller.prediction_engine = _FakePredictionEngine(pending=60)
+
+    controller._adjust_prediction_lead()
+
+    assert controller.pending_tick_adjustment == -1

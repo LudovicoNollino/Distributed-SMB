@@ -777,6 +777,50 @@ class TestOnReconnectionAck:
         assert nc.roster.get_player("player1") is None
         assert nc.roster.get_host().player_id == "player2"
 
+    def test_reconnection_ack_resyncs_environment_from_buffered_snapshot(self):
+        """A surviving client's local destructible_blocks/power_ups/gates are
+        never touched by ordinary reconcile() (see M4 — avoids pop-in on a
+        locally-predicted block break). If a BlockDestroyedMessage was lost
+        during the crash window (the WS relay can die with the old host),
+        this node's local copy silently diverges from every other survivor
+        forever, since nothing else ever corrects it. On reconnection it must
+        be resynced from the same last-known-good snapshot the new host
+        itself bootstraps from — otherwise one client can permanently show a
+        block as broken while everyone else (correctly) does not."""
+        from distributed_smb.domain.entity import DestructibleBlock
+        from distributed_smb.domain.world import EnvironmentalState, WorldState
+        from distributed_smb.shared.messages.election import ReconnectionAck
+        from distributed_smb.shared.messages.sync import WorldStateSnapshot
+
+        nc = self._make_following_controller()
+        # This node's own locally-predicted (and now stale/wrong) block state.
+        nc.engine.world_state.environment.destructible_blocks = [
+            DestructibleBlock(x=100, y=200, destroyed=True)
+        ]
+
+        # The last authoritative snapshot received before the crash — the
+        # real block was never actually destroyed.
+        correct_env = EnvironmentalState(
+            destructible_blocks=[DestructibleBlock(x=100, y=200, destroyed=False)]
+        )
+        nc.env_state_buffer.update(
+            WorldStateSnapshot(
+                sequence_number=42,
+                world_state=WorldState(sequence_number=42, environment=correct_env),
+            )
+        )
+
+        nc._on_reconnection_ack(
+            ReconnectionAck(
+                new_host_ip="10.0.0.2",
+                udp_port=50010,
+                game_events_port=50003,
+                session_id="test-session",
+            )
+        )
+
+        assert nc.engine.world_state.environment.destructible_blocks[0].destroyed is False
+
     def test_reconnection_ack_idempotent(self):
         """Second ack (relay echo) is ignored; roster stays consistent."""
         from distributed_smb.shared.messages.election import ReconnectionAck
@@ -823,3 +867,52 @@ class TestPromoteHost:
         r = self._make_roster()
         r.promote_host("p2")
         assert r.get_host().player_id == "p2"
+
+
+# ---------------------------------------------------------------------------
+# _merge_roster — peers that joined after this node built its own roster
+# ---------------------------------------------------------------------------
+
+
+class TestMergeRoster:
+    def test_learning_a_late_joiner_prevents_a_sole_survivor_promotion(self):
+        """Without the host's roster broadcast a node that rejoined mid-session
+        is invisible to the peers already in game: on the next host crash each
+        one sees no peers, promotes itself, and the session splits in two."""
+        nc, _ = _make_controller()  # roster: player1 (host), player2 (self)
+        assert nc._known_client_peers() == set()
+
+        broadcast = GlobalRoster()
+        broadcast.add_player(
+            RosterEntry(
+                player_id="player1",
+                host="10.0.0.1",
+                udp_port=HOST_UDP_PORT,
+                join_index=0,
+                is_host=True,
+            )
+        )
+        broadcast.add_player(
+            RosterEntry(player_id="player2", host="10.0.0.2", udp_port=50011, join_index=1)
+        )
+        broadcast.add_player(
+            RosterEntry(player_id="player4", host="10.0.0.4", udp_port=50013, join_index=3)
+        )
+
+        nc._merge_roster(broadcast)
+
+        assert nc._known_client_peers() == {"10.0.0.4"}
+
+    def test_merge_is_additive_and_idempotent(self):
+        nc, _ = _make_controller()
+        before = nc.roster.get_player("player1")
+
+        broadcast = GlobalRoster()
+        broadcast.add_player(
+            RosterEntry(player_id="player4", host="10.0.0.4", udp_port=50013, join_index=3)
+        )
+        nc._merge_roster(broadcast)
+        nc._merge_roster(broadcast)
+
+        assert len(nc.roster.get_all_players()) == 3
+        assert nc.roster.get_player("player1") == before
