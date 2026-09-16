@@ -187,3 +187,136 @@ def test_replay_lobby_phase_resets_engine_without_new_session():
     assert host.engine.world_state.victory is False
     assert host.engine.world_state.environment.destructible_blocks[0].destroyed is False
     assert set(host.engine.world_state.characters) == {"player1", "player2"}
+
+
+def test_client_returns_to_menu_when_the_host_leaves_the_lobby():
+    """SessionClosed must abort the client's wait with a distinct error, so
+    main() can send it back to the menu instead of hanging on poll()."""
+    from distributed_smb.application.lobby_coordinator import SessionClosedError
+    from distributed_smb.shared.messages.session import SessionClosed
+
+    class ClosingWsHandler:
+        def poll(self):
+            return SessionClosed(session_id="abc123")
+
+    controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    controller.ws_handler = ClosingWsHandler()
+
+    with pytest.raises(SessionClosedError):
+        controller._client_replay_wait()
+
+
+def _run_lobby_until_cancelled(ctrl, errors, **kwargs):
+    from distributed_smb.application.lobby_coordinator import (
+        LobbyCancelledError,
+        SessionClosedError,
+    )
+
+    try:
+        ctrl.lobby_phase(**kwargs)
+    except (LobbyCancelledError, SessionClosedError) as exc:
+        errors.append(exc)
+
+
+def test_a_client_leaving_disappears_from_the_hosts_roster():
+    """End-to-end with real controllers and sockets: a client that leaves the
+    lobby must vanish from the host's roster. Guards the client side too —
+    the leave message is only correct if session_id and join_index were
+    recorded when the join was acknowledged, not later at game start."""
+    host = _make_host()
+    client = _make_client()
+    stop_host = threading.Event()
+    outcomes: list = []
+
+    def host_update(status, session_id, roster):
+        return not stop_host.is_set()
+
+    t_host = threading.Thread(
+        target=_run_lobby_until_cancelled,
+        args=(host, outcomes),
+        kwargs={"on_update": host_update, "start_requested": lambda: False},
+        daemon=True,
+    )
+    t_host.start()
+    deadline = time.time() + 5.0
+    while not host.session_id and time.time() < deadline:
+        time.sleep(0.05)
+
+    stop_client = threading.Event()
+    t_client = threading.Thread(
+        target=_run_lobby_until_cancelled,
+        args=(client, outcomes),
+        kwargs={
+            "session_id": host.session_id,
+            "on_update": lambda *a: not stop_client.is_set(),
+        },
+        daemon=True,
+    )
+    t_client.start()
+
+    deadline = time.time() + 5.0
+    while (
+        len(host.roster.players) < 2 or len(client.roster.players) < 2
+    ) and time.time() < deadline:
+        time.sleep(0.05)
+    assert len(host.roster.players) == 2
+    assert len(client.roster.players) == 2
+
+    client.leave_lobby()
+    stop_client.set()
+
+    deadline = time.time() + 5.0
+    while len(host.roster.players) != 1 and time.time() < deadline:
+        time.sleep(0.05)
+
+    stop_host.set()
+    t_host.join(timeout=3.0)
+    t_client.join(timeout=3.0)
+
+    assert [p.player_id for p in host.roster.players] == ["player1"]
+
+
+def test_the_host_leaving_sends_every_client_back_to_the_menu():
+    """End-to-end: when the host leaves, a waiting client's lobby phase must
+    end with SessionClosedError instead of waiting forever."""
+    from distributed_smb.application.lobby_coordinator import SessionClosedError
+
+    host = _make_host()
+    client = _make_client()
+    stop_host = threading.Event()
+    outcomes: list = []
+
+    t_host = threading.Thread(
+        target=_run_lobby_until_cancelled,
+        args=(host, outcomes),
+        kwargs={
+            "on_update": lambda *a: not stop_host.is_set(),
+            "start_requested": lambda: False,
+        },
+        daemon=True,
+    )
+    t_host.start()
+    deadline = time.time() + 5.0
+    while not host.session_id and time.time() < deadline:
+        time.sleep(0.05)
+
+    t_client = threading.Thread(
+        target=_run_lobby_until_cancelled,
+        args=(client, outcomes),
+        kwargs={"session_id": host.session_id},
+        daemon=True,
+    )
+    t_client.start()
+
+    deadline = time.time() + 5.0
+    while len(client.roster.players) < 2 and time.time() < deadline:
+        time.sleep(0.05)
+
+    host.leave_lobby()
+    stop_host.set()
+
+    t_client.join(timeout=5.0)
+    t_host.join(timeout=3.0)
+
+    assert not t_client.is_alive()
+    assert any(isinstance(o, SessionClosedError) for o in outcomes)

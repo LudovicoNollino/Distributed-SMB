@@ -58,6 +58,23 @@ class SessionCreated:
 
 
 @dataclass(slots=True)
+class SessionLeave:
+    """Sent by a client that deliberately leaves the lobby."""
+
+    session_id: str
+    join_index: int
+    message_type: MessageType = field(init=False, default=MessageType.SESSION_LEAVE)
+
+
+@dataclass(slots=True)
+class SessionClosed:
+    """Sent by the lobby to every remaining client when the host leaves."""
+
+    session_id: str
+    message_type: MessageType = field(init=False, default=MessageType.SESSION_CLOSED)
+
+
+@dataclass(slots=True)
 class SessionJoined:
     """Sent by the lobby to the joining client after a successful join."""
 

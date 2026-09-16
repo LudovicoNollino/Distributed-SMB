@@ -303,3 +303,50 @@ def test_checkpoint_toast_triggers_only_on_physical_touch():
     )
     renderer._ui_renderer.sync_checkpoint_toasts(touching_frame, now_ms=100)
     assert "checkpoint-1" in renderer._checkpoint_toasts
+
+
+def test_lobby_leave_button_signals_departure_without_closing_the_window():
+    """Leaving must be distinguishable from closing the window: the first
+    returns to the main menu, the second ends the process."""
+    import pygame
+
+    from distributed_smb.presentation.lobby_screen import LobbyScreen
+    from distributed_smb.shared.enums import PlayerRole
+    from distributed_smb.shared.roster import GlobalRoster
+
+    screen = LobbyScreen()
+    leave_btn_pos = (screen.width - 52 - 65, 660)
+    pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=leave_btn_pos))
+
+    still_open = screen.render(
+        role=PlayerRole.CLIENT,
+        status="Waiting",
+        session_id="abc123",
+        roster=GlobalRoster(),
+    )
+
+    assert still_open is False
+    assert screen.leave_requested is True
+    assert screen.is_closed is False
+
+
+def test_lobby_escape_key_requests_leaving():
+    import pygame
+
+    from distributed_smb.presentation.lobby_screen import LobbyScreen
+    from distributed_smb.shared.enums import PlayerRole
+    from distributed_smb.shared.roster import GlobalRoster
+
+    screen = LobbyScreen()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE))
+
+    still_open = screen.render(
+        role=PlayerRole.HOST,
+        status="Waiting",
+        session_id="abc123",
+        roster=GlobalRoster(),
+    )
+
+    assert still_open is False
+    assert screen.leave_requested is True
+    assert screen.is_closed is False

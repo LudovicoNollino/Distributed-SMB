@@ -6,6 +6,7 @@ import socket
 import threading
 import time
 
+from distributed_smb.application.lobby_coordinator import SessionClosedError
 from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
 from distributed_smb.application.recovery.prober import RecoveryProber
 from distributed_smb.network.discovery import DiscoveryService
@@ -28,6 +29,10 @@ from distributed_smb.shared.config import (
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 from distributed_smb.shared.session_metadata import delete_session_metadata, read_session_metadata
+
+
+class ReturnToMenu(Exception):
+    """Raised when the node leaves a lobby and should go back to the main menu."""
 
 
 def build_controller(
@@ -267,24 +272,32 @@ def main(
             controller.ws_handler = WsHandler(host=host_ip or DEFAULT_HOST, port=LOBBY_WS_PORT)
 
         lobby_screen.render(
-            role=role,
+            role=controller.role,
             status="Preparing lobby",
             session_id=session_id,
             roster=controller.roster,
         )
 
         def update_lobby_screen(status: str, current_session_id: str, roster) -> bool:
+            # controller.role, not the startup role: a node promoted mid-session
+            # returns to the lobby as host, and only the host is offered Start.
             return lobby_screen.render(
-                role=role,
+                role=controller.role,
                 status=status,
                 session_id=current_session_id or session_id,
                 roster=roster,
             )
 
         def teardown() -> None:
+            controller.leave_lobby()
             controller.ws_handler.close()
+            controller.game_event_handler.close()
             controller.udp_handler.close_socket()
-            controller.lobby_container_manager.stop()
+            # Only the host owns the containers — a leaving client must not stop
+            # the lobby/relay the others are still using (same machine, shared
+            # container names; see LobbyContainerManager).
+            if controller.role is PlayerRole.HOST:
+                controller.lobby_container_manager.stop()
             delete_session_metadata()
 
         def enter_lobby_and_transition(*, is_replay: bool) -> bool:
@@ -305,16 +318,23 @@ def main(
                     if role is PlayerRole.CLIENT:
                         controller.game_event_handler.connect()
                 if not lobby_screen.play_game_start_transition(
-                    role=role,
+                    role=controller.role,
                     roster=controller.roster,
                 ):
                     logging.info("Gameplay start cancelled during transition")
                     teardown()
                     return False
             except LobbyCancelledError:
-                logging.info("Lobby closed before game start")
                 teardown()
+                if lobby_screen.leave_requested and not lobby_screen.is_closed:
+                    logging.info("Left the lobby — returning to the main menu")
+                    raise ReturnToMenu from None
+                logging.info("Lobby closed before game start")
                 return False
+            except SessionClosedError:
+                logging.info("The host left the lobby — returning to the main menu")
+                teardown()
+                raise ReturnToMenu from None
             except Exception as exc:
                 logging.exception("Lobby failed before game start")
                 teardown()
@@ -360,38 +380,47 @@ def _drop_rate(value: str) -> float:
 
 if __name__ == "__main__":
     args = parse_args()
-    selected_role = None
-    host_ip = args.host_ip
-    session_id = args.session_id
     local_ip = args.local_ip or _detect_local_ip()
 
-    if args.host:
-        selected_role = PlayerRole.HOST
-    elif args.client:
-        selected_role = PlayerRole.CLIENT
-    else:
-        lobby_screen = LobbyScreen()
-        try:
-            recovered = _try_recover_session(local_ip, lobby_screen=lobby_screen)
-        finally:
-            lobby_screen.close()
+    while True:
+        selected_role = None
+        host_ip = args.host_ip
+        session_id = args.session_id
 
-        if recovered is not None:
-            host_ip, session_id = recovered
+        if args.host:
+            selected_role = PlayerRole.HOST
+        elif args.client:
             selected_role = PlayerRole.CLIENT
         else:
-            menu = MenuScreen()
-            selected_role = menu.prompt_role_selection()
-            menu.close()
-            if selected_role is None:
-                raise SystemExit(0)
+            lobby_screen = LobbyScreen()
+            try:
+                recovered = _try_recover_session(local_ip, lobby_screen=lobby_screen)
+            finally:
+                lobby_screen.close()
 
-    main(
-        run_app=True,
-        role=selected_role,
-        packet_drop_rate=args.drop_rate,
-        artificial_latency_ms=args.latency,
-        host_ip=host_ip,
-        local_ip=local_ip,
-        session_id=session_id,
-    )
+            if recovered is not None:
+                host_ip, session_id = recovered
+                selected_role = PlayerRole.CLIENT
+            else:
+                menu = MenuScreen()
+                selected_role = menu.prompt_role_selection()
+                menu.close()
+                if selected_role is None:
+                    raise SystemExit(0)
+
+        try:
+            main(
+                run_app=True,
+                role=selected_role,
+                packet_drop_rate=args.drop_rate,
+                artificial_latency_ms=args.latency,
+                host_ip=host_ip,
+                local_ip=local_ip,
+                session_id=session_id,
+            )
+        except ReturnToMenu:
+            if args.host or args.client:
+                # CLI shortcuts pin the role, so there is no menu to go back to.
+                raise SystemExit(0) from None
+            continue
+        break

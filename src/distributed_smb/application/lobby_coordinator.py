@@ -18,10 +18,12 @@ from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.messages.session import (
     GameStart,
     RosterUpdate,
+    SessionClosed,
     SessionCreate,
     SessionCreated,
     SessionJoin,
     SessionJoined,
+    SessionLeave,
 )
 from distributed_smb.shared.roster import GlobalRoster
 
@@ -33,6 +35,10 @@ StartRequestedCallback = Callable[[], bool]
 
 class LobbyCancelledError(RuntimeError):
     """Raised when the user closes the lobby UI before game start."""
+
+
+class SessionClosedError(RuntimeError):
+    """Raised when the host leaves the lobby and the room is dismissed."""
 
 
 class LobbyMixin:
@@ -113,9 +119,27 @@ class LobbyMixin:
             elif isinstance(msg, GameStart):
                 self._notify_lobby_update("Starting game", on_update)
                 break
+            elif isinstance(msg, SessionClosed):
+                raise SessionClosedError("The host left the lobby")
             else:
                 self._notify_lobby_update("Waiting for game to restart", on_update)
             time.sleep(0.05)
+
+    def leave_lobby(self) -> None:
+        """Tell the lobby this node is leaving, so the others drop it from the roster.
+
+        Announced explicitly instead of letting the socket drop: a lost
+        connection also happens on a crash or a host migration, where the
+        lobby must not evict anyone.
+        """
+        if not self.session_id:
+            return
+        try:
+            self.ws_handler.send(
+                SessionLeave(session_id=self.session_id, join_index=self.join_index)
+            )
+        except Exception as exc:
+            LOGGER.info("lobby: could not announce departure (%s)", exc)
 
     def _notify_lobby_update(
         self,
@@ -167,13 +191,13 @@ class LobbyMixin:
 
         created: SessionCreated = self._poll_lobby(SessionCreated)
         self.session_id = created.session_id
+        self.join_index = created.join_index
         LOGGER.info("Session created: %s", self.session_id)
         if self.use_discovery:
             self.discovery_service.announce(self.session_id, LOBBY_WS_PORT)
         self._notify_lobby_update("Waiting for players", on_update)
 
-        deadline = time.time() + LOBBY_TIMEOUT
-        while time.time() < deadline:
+        while True:
             msg = self.ws_handler.poll()
             if isinstance(msg, RosterUpdate):
                 self.roster = msg.roster
@@ -236,13 +260,14 @@ class LobbyMixin:
         )
 
         joined: SessionJoined = self._poll_lobby(SessionJoined)
+        self.session_id = session_id
+        self.join_index = joined.join_index
         self.local_player_id = player_id_for(joined.join_index)
         if hasattr(self.prediction_engine, "local_player_id"):
             self.prediction_engine.local_player_id = self.local_player_id
         self._notify_lobby_update("Joined session", on_update)
 
-        deadline = time.time() + LOBBY_TIMEOUT
-        while time.time() < deadline:
+        while True:
             msg = self.ws_handler.poll()
             if isinstance(msg, RosterUpdate):
                 self.roster = msg.roster
@@ -251,6 +276,8 @@ class LobbyMixin:
                 self.session_id = msg.session_id
                 self._notify_lobby_update("Starting game", on_update)
                 break
+            elif isinstance(msg, SessionClosed):
+                raise SessionClosedError("The host left the lobby")
             else:
                 self._notify_lobby_update("Waiting for game start", on_update)
             time.sleep(0.05)

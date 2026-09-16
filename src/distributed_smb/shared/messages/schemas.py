@@ -56,6 +56,21 @@ class SessionCreatedSchema(BaseModel):
     message_type: str = Field(default="session_created")
 
 
+class SessionLeaveSchema(BaseModel):
+    """Schema for WebSocket SessionLeave message."""
+
+    session_id: str = Field(..., min_length=1)
+    join_index: int = Field(..., ge=0)
+    message_type: str = Field(default="session_leave")
+
+
+class SessionClosedSchema(BaseModel):
+    """Schema for WebSocket SessionClosed message."""
+
+    session_id: str = Field(..., min_length=1)
+    message_type: str = Field(default="session_closed")
+
+
 class SessionJoinedSchema(BaseModel):
     """Schema for WebSocket SessionJoined message."""
 

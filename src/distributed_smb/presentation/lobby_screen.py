@@ -30,6 +30,7 @@ class LobbyScreen:
     _small_font: pygame.font.Font = field(init=False, repr=False)
     is_closed: bool = field(init=False, default=False)
     start_requested: bool = field(init=False, default=False)
+    leave_requested: bool = field(init=False, default=False)
     _copy_flash_until: float = field(init=False, default=0.0)
 
     def __post_init__(self) -> None:
@@ -159,6 +160,8 @@ class LobbyScreen:
         btn_y = 238
         copy_btn = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
         start_btn = pygame.Rect(btn_x - 166, btn_y, 150, btn_h)
+        leave_btn = pygame.Rect(self.width - 52 - 130, 640, 130, 40)
+        leave_hovered = leave_btn.collidepoint(pygame.mouse.get_pos())
         hovered = bool(session_id) and copy_btn.collidepoint(pygame.mouse.get_pos())
         start_hovered = (
             role is PlayerRole.HOST
@@ -173,7 +176,13 @@ class LobbyScreen:
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
                 if role is PlayerRole.HOST and session_id:
                     self.start_requested = True
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self.leave_requested = True
+                return False
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if leave_btn.collidepoint(event.pos):
+                    self.leave_requested = True
+                    return False
                 if copy_btn.collidepoint(event.pos) and session_id:
                     self._copy_to_clipboard(session_id)
                     self._copy_flash_until = time.time() + 2.0
@@ -183,7 +192,7 @@ class LobbyScreen:
         try:
             cursor = (
                 pygame.SYSTEM_CURSOR_HAND
-                if hovered or start_hovered
+                if hovered or start_hovered or leave_hovered
                 else pygame.SYSTEM_CURSOR_ARROW
             )
             pygame.mouse.set_cursor(cursor)
@@ -204,7 +213,10 @@ class LobbyScreen:
             pygame.draw.rect(self._screen, btn_color, copy_btn, border_radius=6)
             self._draw_text("Copy", self._small_font, self.text_color, btn_x + 24, btn_y + 10)
         if time.time() < self._copy_flash_until:
-            self._draw_text("Session ID copiato!", self._small_font, self.accent_color, 78, 322)
+            # Right-aligned: shares row 322 with "ENTER also starts" on the left.
+            confirm = "Session ID copiato!"
+            confirm_x = self.width - 78 - self._small_font.size(confirm)[0]
+            self._draw_text(confirm, self._small_font, self.accent_color, confirm_x, 322)
 
         if role is PlayerRole.HOST and session_id:
             start_color = (108, 200, 150) if start_hovered else self.accent_color
@@ -244,6 +256,16 @@ class LobbyScreen:
                 )
                 y = 418 + index * 34
                 self._draw_text(line, self._small_font, self.text_color, 78, y)
+
+        leave_color = (198, 88, 88) if leave_hovered else (150, 66, 66)
+        pygame.draw.rect(self._screen, leave_color, leave_btn, border_radius=8)
+        self._draw_text(
+            "Esci  (ESC)",
+            self._small_font,
+            self.text_color,
+            leave_btn.x + 22,
+            leave_btn.y + 12,
+        )
 
         pygame.display.flip()
         return True

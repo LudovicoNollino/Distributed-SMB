@@ -227,6 +227,7 @@ def test_main_client_discovery_join_prompts_for_session_id_only():
 
     class FakeController:
         def __init__(self):
+            self.role = PlayerRole.HOST
             self.roster = object()
             self.ws_handler = FakeConnection()
             self.udp_handler = FakeConnection()
@@ -289,6 +290,7 @@ def test_main_plays_transition_before_game_run():
 
     class FakeController:
         def __init__(self):
+            self.role = PlayerRole.HOST
             self.roster = object()
             self.ws_handler = FakeConnection()
             self.udp_handler = FakeConnection()
@@ -345,6 +347,7 @@ def test_main_loops_back_to_lobby_after_victory_outcome():
 
     class FakeController:
         def __init__(self):
+            self.role = PlayerRole.HOST
             self.roster = object()
             self.ws_handler = FakeConnection()
             self.udp_handler = FakeConnection()

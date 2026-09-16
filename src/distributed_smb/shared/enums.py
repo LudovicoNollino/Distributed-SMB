@@ -50,6 +50,7 @@ class MessageType(StrEnum):
     SESSION_CREATE = "session_create"
     SESSION_JOIN = "session_join"
     SESSION_RECREATE = "session_recreate"
+    SESSION_LEAVE = "session_leave"
     GAME_START = "game_start"
     INITIAL_STATE_SYNC = "initial_state_sync"
 
@@ -57,6 +58,7 @@ class MessageType(StrEnum):
     SESSION_CREATED = "session_created"
     SESSION_JOINED = "session_joined"
     ROSTER_UPDATE = "roster_update"
+    SESSION_CLOSED = "session_closed"
 
     # WebSocket — election and host migration
     NEW_HOST_CLAIM = "new_host_claim"

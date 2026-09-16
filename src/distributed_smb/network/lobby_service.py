@@ -17,10 +17,12 @@ from distributed_smb.shared.messages.session import (
     GameStart,
     MessageType,
     RosterUpdate,
+    SessionClosed,
     SessionCreate,
     SessionCreated,
     SessionJoin,
     SessionJoined,
+    SessionLeave,
     SessionRecreate,
 )
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
@@ -87,6 +89,23 @@ class LobbyManager:
         record = self._sessions.get(session_id)
         if record:
             record.connections = [c for c in record.connections if c is not ws]
+
+    def leave_session(self, session_id: str, join_index: int) -> bool:
+        """Drop a participant. Returns True if it was the host (room is over)."""
+        record = self._sessions.get(session_id)
+        if record is None:
+            return False
+        leaving = next((e for e in record.entries if e["join_index"] == join_index), None)
+        if leaving is None:
+            return False
+        record.entries = [e for e in record.entries if e["join_index"] != join_index]
+        return bool(leaving["is_host"])
+
+    def has_session(self, session_id: str) -> bool:
+        return session_id in self._sessions
+
+    def drop_session(self, session_id: str) -> None:
+        self._sessions.pop(session_id, None)
 
     def get_roster(self, session_id: str) -> GlobalRoster:
         roster = GlobalRoster()
@@ -224,6 +243,10 @@ async def lobby_endpoint(ws: WebSocket) -> None:
                 ack = SessionCreated(session_id=session_id, join_index=0)
                 await ws.send_text(json.dumps(_serializer.encode_ws_message(ack)))
 
+            elif message_type == MessageType.SESSION_LEAVE:
+                msg: SessionLeave = _serializer.decode_ws_message(data)
+                await _handle_leave(msg.session_id, msg.join_index)
+
             elif message_type == MessageType.INITIAL_STATE_SYNC:
                 if session_id:
                     await lobby_manager.broadcast(session_id, data)
@@ -242,6 +265,31 @@ async def lobby_endpoint(ws: WebSocket) -> None:
         )
         if session_id:
             lobby_manager.remove_connection(session_id, ws)
+
+
+async def _handle_leave(session_id: str, join_index: int) -> None:
+    """Drop a participant that deliberately left and tell the others.
+
+    Driven by an explicit message rather than by the socket dropping: a lost
+    connection also happens on a crash or a host migration, where membership
+    is owned by the host and the lobby must not evict anyone.
+    """
+    if not lobby_manager.has_session(session_id):
+        return
+
+    if lobby_manager.leave_session(session_id, join_index):
+        LOGGER.info("lobby: host left session %s — closing the room", session_id)
+        await lobby_manager.broadcast(
+            session_id, _serializer.encode_ws_message(SessionClosed(session_id=session_id))
+        )
+        lobby_manager.drop_session(session_id)
+        return
+
+    LOGGER.info("lobby: participant %d left session %s", join_index, session_id)
+    roster = lobby_manager.get_roster(session_id)
+    await lobby_manager.broadcast(
+        session_id, _serializer.encode_ws_message(RosterUpdate(roster=roster))
+    )
 
 
 class LobbyService:

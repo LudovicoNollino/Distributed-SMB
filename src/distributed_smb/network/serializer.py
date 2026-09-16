@@ -47,10 +47,12 @@ from distributed_smb.shared.messages.schemas import (
     PowerUpCollectedMessageSchema,
     ReconnectionAckSchema,
     RosterUpdateSchema,
+    SessionClosedSchema,
     SessionCreatedSchema,
     SessionCreateSchema,
     SessionJoinedSchema,
     SessionJoinSchema,
+    SessionLeaveSchema,
     SessionRecreateSchema,
     WorldStateSchema,
 )
@@ -58,10 +60,12 @@ from distributed_smb.shared.messages.session import (
     GameStart,
     MessageType,
     RosterUpdate,
+    SessionClosed,
     SessionCreate,
     SessionCreated,
     SessionJoin,
     SessionJoined,
+    SessionLeave,
     SessionRecreate,
 )
 from distributed_smb.shared.messages.sync import InitialStateSync, WorldStateSnapshot
@@ -74,6 +78,8 @@ WsMessage = Union[
     SessionJoin,
     SessionJoined,
     SessionRecreate,
+    SessionClosed,
+    SessionLeave,
     RosterUpdate,
     GameStart,
     InitialStateSync,
@@ -262,6 +268,17 @@ class Serializer:
                     host_udp_port=validated.host_udp_port,
                     host_join_index=validated.host_join_index,
                 )
+
+            if message_type == MessageType.SESSION_LEAVE:
+                validated = SessionLeaveSchema(**data)
+                return SessionLeave(
+                    session_id=validated.session_id,
+                    join_index=validated.join_index,
+                )
+
+            if message_type == MessageType.SESSION_CLOSED:
+                validated = SessionClosedSchema(**data)
+                return SessionClosed(session_id=validated.session_id)
 
             if message_type == MessageType.SESSION_JOINED:
                 validated = SessionJoinedSchema(**data)

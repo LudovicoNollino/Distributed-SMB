@@ -38,7 +38,7 @@ GAME_EVENT_HEARTBEAT_INTERVAL = 5.0  # seconds between WebSocket heartbeat pings
 
 # Lobby coordination timings
 LOBBY_STARTUP_WAIT = 0.5  # seconds to wait for uvicorn to bind before connecting
-LOBBY_TIMEOUT = 30.0  # seconds a client waits for GAME_START before giving up
+LOBBY_TIMEOUT = 30.0  # seconds to wait for a lobby handshake reply before giving up
 
 TICK_RATE = 60
 TICK_INTERVAL = 1.0 / TICK_RATE

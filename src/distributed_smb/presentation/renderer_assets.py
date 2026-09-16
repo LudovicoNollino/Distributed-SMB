@@ -10,18 +10,14 @@ from distributed_smb.application.dto import RenderCharacter
 from distributed_smb.shared.paths import TILESETS_DIR
 
 MARIO_FRAME_SIZE = 32
-V2_CHARACTER_FRAME_SIZE = 160
 TILE_SIZE = 16
 DISPLAY_TILE_SIZE = 30
 
-# (sheet filename, frame cell size, base_frame) per join_index % 4. Each sheet
-# shares the same 26-frame layout (base_frame=idle, +1..+3 walk, +5 jump,
-# +6 duck); base_frame=17 is a white/fire recolor, deliberately unused here.
 PLAYER_SPRITE_SHEETS = {
     0: ("Mario.png", MARIO_FRAME_SIZE, 8),
-    1: ("v2_mario_luigi.png", V2_CHARACTER_FRAME_SIZE, 8),
-    2: ("v2_mario_wario.png", V2_CHARACTER_FRAME_SIZE, 8),
-    3: ("v2_mario_waluigi.png", V2_CHARACTER_FRAME_SIZE, 8),
+    1: ("luigi.png", MARIO_FRAME_SIZE, 8),
+    2: ("wario.png", MARIO_FRAME_SIZE, 8),
+    3: ("waluigi.png", MARIO_FRAME_SIZE, 8),
 }
 
 DECORATION_SOURCE_RECTS = {

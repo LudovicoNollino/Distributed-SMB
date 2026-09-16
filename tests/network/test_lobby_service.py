@@ -262,3 +262,99 @@ def test_session_recreate_registers_session_and_sends_created_ack():
         assert host_entry is not None
         assert host_entry.host == "192.168.1.10"
         assert host_entry.join_index == 1
+
+
+def _leave_msg(session_id, join_index):
+    return json.dumps(
+        {
+            "message_type": "session_leave",
+            "session_id": session_id,
+            "join_index": join_index,
+        }
+    )
+
+
+def test_client_leaving_the_lobby_is_removed_from_the_roster():
+    """A client that announces its departure must disappear from the roster of
+    everyone still in the lobby."""
+    with client.websocket_connect("/lobby") as host_ws:
+        host_ws.send_text(_create_msg())
+        session_id = json.loads(host_ws.receive_text())["session_id"]
+        host_ws.receive_text()  # first roster_update
+
+        with client.websocket_connect("/lobby") as client_ws:
+            client_ws.send_text(_join_msg(session_id))
+            joined = json.loads(client_ws.receive_text())
+            client_ws.receive_text()  # roster_update
+            assert len(json.loads(host_ws.receive_text())["roster"]["players"]) == 2
+
+            client_ws.send_text(_leave_msg(session_id, joined["join_index"]))
+            roster = json.loads(host_ws.receive_text())
+            client_ws.receive_text()  # the leaver gets the broadcast too
+
+    assert roster["message_type"] == MessageType.ROSTER_UPDATE
+    assert [p["player_id"] for p in roster["roster"]["players"]] == ["player1"]
+
+
+def test_host_leaving_the_lobby_closes_the_room():
+    """The room has no meaning without its host: the others get SessionClosed
+    (they return to the menu) and the session is dropped entirely."""
+    with client.websocket_connect("/lobby") as host_ws:
+        host_ws.send_text(_create_msg())
+        session_id = json.loads(host_ws.receive_text())["session_id"]
+        host_ws.receive_text()
+
+        with client.websocket_connect("/lobby") as client_ws:
+            client_ws.send_text(_join_msg(session_id))
+            client_ws.receive_text()  # session_joined
+            client_ws.receive_text()  # roster_update
+            host_ws.receive_text()  # roster_update
+
+            host_ws.send_text(_leave_msg(session_id, 0))
+            closed = json.loads(client_ws.receive_text())
+            host_ws.receive_text()  # the host gets its own broadcast too
+
+    assert closed["message_type"] == MessageType.SESSION_CLOSED
+    assert closed["session_id"] == session_id
+    assert not lobby_manager.is_active(session_id)
+
+
+def test_leaving_works_after_the_game_has_started():
+    """The post-victory lobby runs on a session already marked active — an
+    explicit leave must still update the roster there."""
+    from distributed_smb.shared.roster import GlobalRoster, RosterEntry
+
+    roster = GlobalRoster()
+    roster.add_player(
+        RosterEntry(player_id="player2", host="10.0.0.2", udp_port=50010, join_index=1)
+    )
+    lobby_manager.register_active_session("active-1", roster, next_join_index=2)
+
+    with client.websocket_connect("/lobby") as ws:
+        ws.send_text(_join_msg("active-1", player_id="player3", port=49500))
+        joined = json.loads(ws.receive_text())
+        ws.receive_text()  # roster_update
+        ws.receive_text()  # game_start
+
+        ws.send_text(_leave_msg("active-1", joined["join_index"]))
+        roster_msg = json.loads(ws.receive_text())
+
+    assert [p["player_id"] for p in roster_msg["roster"]["players"]] == ["player2"]
+
+
+def test_a_dropped_connection_does_not_evict_anyone():
+    """A socket dying is not a departure: it also happens on a crash or during
+    a host migration, where membership belongs to the host."""
+    with client.websocket_connect("/lobby") as host_ws:
+        host_ws.send_text(_create_msg())
+        session_id = json.loads(host_ws.receive_text())["session_id"]
+        host_ws.receive_text()
+
+        with client.websocket_connect("/lobby") as client_ws:
+            client_ws.send_text(_join_msg(session_id))
+            client_ws.receive_text()
+            client_ws.receive_text()
+            host_ws.receive_text()
+
+    players = {e.player_id for e in lobby_manager.get_roster(session_id).get_all_players()}
+    assert players == {"player1", "player2"}

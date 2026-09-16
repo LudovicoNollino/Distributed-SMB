@@ -60,7 +60,7 @@ class UiRenderer:
             return
 
         font = pygame.font.SysFont(None, 40)
-        text_surface = font.render("Checkpoint raggiunto!", True, (255, 230, 120))
+        text_surface = font.render("CHECKPOINT", True, (255, 230, 120))
         panel_width = text_surface.get_width() + 40
         panel_height = text_surface.get_height() + 20
 
