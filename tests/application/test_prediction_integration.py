@@ -9,7 +9,6 @@ from distributed_smb.application.reconciliation import (
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.shared.config import (
     ARTIFICIAL_LATENCY_MS,
-    DIVERGENCE_THRESHOLD,
     INPUT_HISTORY_SIZE,
     MAX_ROLLBACK_FRAMES,
     TICK_INTERVAL,
@@ -56,9 +55,6 @@ class _SpyPredictionEngine:
 
     def reconcile(self, authoritative_snapshot: WorldStateSnapshot) -> None:
         self.reconcile_calls.append(authoritative_snapshot)
-
-    def should_rollback(self, predicted, authoritative) -> bool:
-        return False
 
     def pending_count(self) -> int:
         return 0
@@ -237,18 +233,12 @@ def test_noop_predict_does_not_mutate_world_state():
     assert nc.engine.world_state.sequence_number == original_seq
 
 
-def test_noop_should_rollback_always_returns_false():
-    noop = NoopPredictionEngine()
-    assert noop.should_rollback((0.0, 0.0), (999.0, 999.0)) is False
-
-
 # ---------------------------------------------------------------------------
 # M5 config sanity
 # ---------------------------------------------------------------------------
 
 
 def test_m5_config_constants_are_positive():
-    assert DIVERGENCE_THRESHOLD > 0
     assert INPUT_HISTORY_SIZE > 0
     assert MAX_ROLLBACK_FRAMES > 0
 

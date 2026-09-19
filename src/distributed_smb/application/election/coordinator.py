@@ -8,7 +8,6 @@ State transitions:
     ELECTION_PENDING -> CLAIMED (election timer expires, self-elected)
     ELECTION_PENDING -> FOLLOWER (valid NewHostClaim from lower-indexed peer received)
     CLAIMED -> FOLLOWER (NewHostClaim from lower-indexed peer overrides us)
-    FOLLOWER -> ELECTION_PENDING (current_host unresponsive, cascade to next)
 """
 
 from dataclasses import dataclass
@@ -77,7 +76,7 @@ class ElectionCoordinator:
         my_ip: This node's IP address.
         current_host_ip: IP of currently elected host (when state == FOLLOWER).
         current_host_join_index: JoinIndex of currently elected host.
-        known_peers: Set of peer IPs known to be alive (updated on cascade).
+        known_peers: Set of peer IPs known to be alive.
         election_timer_expiry: Unix timestamp when election timer fires (None if not pending).
     """
 
@@ -177,33 +176,3 @@ class ElectionCoordinator:
         self.current_host_join_index = claimer_join_index
         self.election_timer_expiry = None
         return FollowingHost(claimer_ip=claimer_ip, claimer_join_index=claimer_join_index)
-
-    def on_claim_unresponsive(self, failed_ip: str) -> None:
-        """Current elected host became unresponsive.
-
-        Cascade: remove failed_ip from known_peers and restart election
-        with the updated peer set. The next lowest-JoinIndex node will
-        eventually elect itself.
-
-        Args:
-            failed_ip: IP address of the unresponsive host.
-        """
-        if failed_ip in self.known_peers:
-            self.known_peers.discard(failed_ip)
-        # Cascade: restart election with updated known_peers
-        self.start_election(self.known_peers)
-
-    def get_state_info(self) -> dict:
-        """Return current state for debugging/logging.
-
-        Returns:
-            Dict with state, join_index, current_host_ip, election_timer_expiry.
-        """
-        return {
-            "state": self.state.value,
-            "join_index": self.join_index,
-            "my_ip": self.my_ip,
-            "current_host_ip": self.current_host_ip,
-            "current_host_join_index": self.current_host_join_index,
-            "election_timer_expiry": self.election_timer_expiry,
-        }

@@ -11,7 +11,6 @@ from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.election import (
     ElectionAck,
-    ElectionNack,
     NewHostClaim,
     ReconnectionAck,
 )
@@ -32,7 +31,6 @@ from distributed_smb.shared.messages.recovery import (
 from distributed_smb.shared.messages.schemas import (
     BlockDestroyedMessageSchema,
     ElectionAckSchema,
-    ElectionNackSchema,
     GameStartSchema,
     GateStateChangedMessageSchema,
     HostDiscoveryProbeSchema,
@@ -92,7 +90,6 @@ WsMessage = Union[
     LevelResetMessage,
     NewHostClaim,
     ElectionAck,
-    ElectionNack,
     ReconnectionAck,
 ]
 
@@ -130,7 +127,6 @@ class Serializer:
         | HostIdentityResponse
         | NewHostClaim
         | ElectionAck
-        | ElectionNack
         | ReconnectionAck,
     ) -> bytes:
         """Encode a gameplay packet to bytes ready for UDP transport."""
@@ -146,7 +142,6 @@ class Serializer:
         | HostIdentityResponse
         | NewHostClaim
         | ElectionAck
-        | ElectionNack
         | ReconnectionAck
     ):
         """Decode a UDP gameplay packet into its typed dataclass."""
@@ -195,14 +190,6 @@ class Serializer:
             if message_type == MessageType.ELECTION_ACK:
                 validated = ElectionAckSchema(**data)
                 return ElectionAck(from_ip=validated.from_ip, session_id=validated.session_id)
-
-            if message_type == MessageType.ELECTION_NACK:
-                validated = ElectionNackSchema(**data)
-                return ElectionNack(
-                    from_ip=validated.from_ip,
-                    session_id=validated.session_id,
-                    reason=validated.reason,
-                )
 
             if message_type == MessageType.RECONNECTION_ACK:
                 validated = ReconnectionAckSchema(**data)
@@ -357,14 +344,6 @@ class Serializer:
             if message_type == MessageType.ELECTION_ACK:
                 validated = ElectionAckSchema(**data)
                 return ElectionAck(from_ip=validated.from_ip, session_id=validated.session_id)
-
-            if message_type == MessageType.ELECTION_NACK:
-                validated = ElectionNackSchema(**data)
-                return ElectionNack(
-                    from_ip=validated.from_ip,
-                    session_id=validated.session_id,
-                    reason=validated.reason,
-                )
 
             if message_type == MessageType.RECONNECTION_ACK:
                 validated = ReconnectionAckSchema(**data)

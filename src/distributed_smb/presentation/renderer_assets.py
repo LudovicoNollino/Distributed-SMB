@@ -113,9 +113,9 @@ class AssetSpriteFactory:
         try:
             sheet = pygame.image.load(str(path))
             if sheet.get_masks()[3] == 0:
-                # No native alpha channel (e.g. the v2_mario_* sheets): their "black"
-                # background isn't pure (0,0,0) everywhere (compression noise), so
-                # snap near-black pixels before keying them out as transparent.
+                # No native alpha channel: a "black" background is rarely pure
+                # (0,0,0) everywhere (compression noise), so snap near-black
+                # pixels before keying them out as transparent.
                 pixels = pygame.PixelArray(sheet)
                 pixels.replace((0, 0, 0), (0, 0, 0), distance=0.08)
                 del pixels
@@ -218,83 +218,6 @@ class AssetSpriteFactory:
                 (inner.centerx, inner.centery),
                 max(3, min(width, height) // 9),
             )
-
-    def _powerup_sprite_state(self, powerup_id: str) -> str:
-        if powerup_id.startswith("coin-"):
-            return "coin"
-        if powerup_id.startswith("flower-"):
-            return "flower"
-        if powerup_id.startswith("mushroom-"):
-            return "mushroom"
-        return "star"
-
-    def _powerup_source_rect(self, state: str) -> tuple[int, int, int, int]:
-        rects = {
-            "coin": (0, TILE_SIZE, TILE_SIZE, TILE_SIZE),
-            "flower": (TILE_SIZE * 2, 0, TILE_SIZE, TILE_SIZE),
-            "mushroom": (0, 0, TILE_SIZE, TILE_SIZE),
-            "star": (TILE_SIZE * 3, 0, TILE_SIZE, TILE_SIZE),
-        }
-        return rects.get(state, rects["star"])
-
-    def _get_environment_sprite(
-        self,
-        sprite_kind: str,
-        state: str,
-        width: int,
-        height: int,
-    ) -> pygame.Surface:
-        cache_key = (sprite_kind, state, width, height)
-        cached = self.owner._environment_sprite_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        sprite = self._build_environment_asset_sprite(sprite_kind, state, width, height)
-        if sprite is None:
-            sprite = pygame.Surface((width, height), pygame.SRCALPHA)
-            if sprite_kind == "block":
-                self._draw_block_surface(sprite)
-            elif sprite_kind == "powerup":
-                self._draw_powerup_surface(sprite)
-            elif sprite_kind == "gate":
-                self._draw_gate_surface(sprite, state)
-        self.owner._environment_sprite_cache[cache_key] = sprite
-        return sprite
-
-    def _build_environment_asset_sprite(
-        self,
-        sprite_kind: str,
-        state: str,
-        width: int,
-        height: int,
-    ) -> pygame.Surface | None:
-        if sprite_kind == "block":
-            return self._get_asset_sprite(
-                "OverWorld.png", (TILE_SIZE * 3, 0, TILE_SIZE, TILE_SIZE), width, height
-            )
-        if sprite_kind == "powerup":
-            return self._get_asset_sprite(
-                "Items.png", self._powerup_source_rect(state), width, height
-            )
-        if sprite_kind == "gate":
-            sprite = self._get_asset_sprite("Castle.png", (0, 0, 80, 80), width, height)
-            if sprite is None:
-                return None
-            sprite = sprite.copy()
-            if state == "closed":
-                door = pygame.Rect(width * 0.36, height * 0.58, width * 0.28, height * 0.36)
-                pygame.draw.rect(sprite, (91, 55, 30), door)
-                pygame.draw.rect(sprite, (36, 24, 18), door, width=max(1, width // 18))
-            return sprite
-        if sprite_kind == "enemy":
-            return self._get_asset_sprite("Enemies.png", (100, 6, 18, 25), width, height)
-        return None
-
-    def _get_decoration_sprite(self, kind: str, width: int, height: int) -> pygame.Surface | None:
-        rect = DECORATION_SOURCE_RECTS.get(kind)
-        if rect is None:
-            return None
-        return self._get_asset_sprite("OverWorld.png", rect, width, height)
 
     def get_player_sprite(self, character: RenderCharacter) -> pygame.Surface:
         body_color = self.owner.player_palette.get(

@@ -20,9 +20,6 @@ HOST_DIAG_LOG_INTERVAL = 120
 HOST_ROSTER_BROADCAST_INTERVAL = 120
 
 
-LOGGER = logging.getLogger(__name__)
-
-
 class HostGameplayMixin:
     def bootstrap_from_snapshot(self, snapshot: WorldStateSnapshot) -> None:
         """Apply an incoming snapshot as the authoritative starting state.

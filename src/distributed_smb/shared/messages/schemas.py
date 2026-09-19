@@ -166,13 +166,6 @@ class ElectionAckSchema(BaseModel):
     message_type: str = Field(default="election_ack")
 
 
-class ElectionNackSchema(BaseModel):
-    from_ip: str = Field(..., min_length=1)
-    session_id: str = Field(..., min_length=1)
-    reason: str = Field(..., min_length=1)
-    message_type: str = Field(default="election_nack")
-
-
 class ReconnectionAckSchema(BaseModel):
     new_host_ip: str = Field(..., min_length=1)
     udp_port: int = Field(..., ge=1024, le=65535)

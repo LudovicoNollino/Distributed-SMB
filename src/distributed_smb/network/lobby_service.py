@@ -151,13 +151,6 @@ class LobbyManager:
             next_join_index=next_join_index,
         )
 
-    def poll_new_joiners(self, session_id: str, known_join_indices: set[int]) -> list[dict]:
-        """Return roster entries whose join_index is not in known_join_indices."""
-        record = self._sessions.get(session_id)
-        if not record:
-            return []
-        return [e for e in record.entries if e["join_index"] not in known_join_indices]
-
     async def broadcast(self, session_id: str, payload: dict) -> None:
         """Send JSON to every WebSocket connected in the session."""
         record = self._sessions.get(session_id)

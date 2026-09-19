@@ -60,7 +60,7 @@ def test_packet_delivered_after_latency_elapses(handlers):
 def test_zero_latency_sends_immediately(handlers):
     """With artificial_latency_ms=0 packets are sent without queuing."""
     _, receiver = handlers
-    direct = UdpHandler(host="127.0.0.1", port=59602, artificial_latency_ms=0)
+    direct = UdpHandler(host="127.0.0.1", port=0, artificial_latency_ms=0)
     direct.open_socket()
 
     direct.send_packet_nowait(b"immediate", "127.0.0.1", RECEIVER_PORT)

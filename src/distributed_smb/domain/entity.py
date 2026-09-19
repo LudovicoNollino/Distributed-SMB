@@ -5,7 +5,7 @@ from distributed_smb.domain.events import (
     GateStateChangedEvent,
     PowerUpCollectedEvent,
 )
-from src.distributed_smb.shared.config import ENEMY_HEIGHT, ENEMY_WIDTH
+from distributed_smb.shared.config import ENEMY_HEIGHT, ENEMY_WIDTH
 
 
 @dataclass(slots=True)

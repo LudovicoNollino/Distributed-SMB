@@ -7,8 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Deque
 
 from distributed_smb.domain.game_engine import GameEngine
-from distributed_smb.domain.world import WorldState
-from distributed_smb.shared.config import DIVERGENCE_THRESHOLD, TICK_INTERVAL
+from distributed_smb.shared.config import TICK_INTERVAL
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
 
@@ -64,12 +63,6 @@ class InputHistoryBuffer:
 
     def clear(self) -> None:
         self._entries.clear()
-
-    def find(self, sequence_number: int) -> InputHistoryEntry | None:
-        for entry in self._entries:
-            if entry.sequence_number == sequence_number:
-                return entry
-        return None
 
 
 class PredictionEngine:
@@ -202,19 +195,6 @@ class PredictionEngine:
             len(pending_inputs),
             _fmt_rtt(rtt_ms),
         )
-
-    def should_rollback(self, predicted: WorldState, authoritative: WorldState) -> bool:
-        predicted_player = predicted.get_player(self.local_player_id)
-        authoritative_player = authoritative.get_player(self.local_player_id)
-
-        if predicted_player is None or authoritative_player is None:
-            return False
-
-        delta_x = predicted_player.x - authoritative_player.x
-        delta_y = predicted_player.y - authoritative_player.y
-        distance = math.hypot(delta_x, delta_y)
-
-        return distance > DIVERGENCE_THRESHOLD
 
     def pending_count(self) -> int:
         return len(self.buffer.get_unacknowledged())

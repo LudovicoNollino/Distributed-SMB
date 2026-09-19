@@ -2,7 +2,6 @@
 
 from distributed_smb.shared.messages.election import (
     ElectionAck,
-    ElectionNack,
     NewHostClaim,
     ReconnectionAck,
 )
@@ -28,6 +27,5 @@ __all__ = [
     # Election
     "NewHostClaim",
     "ElectionAck",
-    "ElectionNack",
     "ReconnectionAck",
 ]

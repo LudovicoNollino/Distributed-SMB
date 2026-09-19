@@ -205,52 +205,6 @@ class TestElectionCoordinatorClaiming:
 class TestElectionCoordinatorCascade:
     """ElectionCoordinator: cascading fallback on host failure."""
 
-    def test_cascade_on_unresponsive_host(self):
-        """on_claim_unresponsive() triggers cascade: restart election."""
-        # Node at join_index=2, following join_index=0
-        node = ElectionCoordinator(
-            join_index=2,
-            my_ip="10.0.0.3",
-            timeout_base_s=0.5,
-            timeout_delta_s=0.3,
-        )
-        node.state = ElectionState.FOLLOWER
-        node.current_host_ip = "10.0.0.1"
-        node.current_host_join_index = 0
-        peers = {"10.0.0.1", "10.0.0.2"}
-        node.known_peers = peers.copy()
-        # Host becomes unresponsive
-        node.on_claim_unresponsive("10.0.0.1")
-        # Cascade: back to ELECTION_PENDING, peer removed from known_peers
-        assert node.state == ElectionState.ELECTION_PENDING
-        assert "10.0.0.1" not in node.known_peers
-        assert node.current_host_ip is None
-
-    def test_cascade_eventually_elects_next_candidate(self):
-        """After cascading, next-lowest JoinIndex eventually self-elects."""
-        # Simulate join_index=0 and join_index=1 in the system
-        # join_index=1 is following join_index=0
-        follower = ElectionCoordinator(
-            join_index=1,
-            my_ip="10.0.0.2",
-            timeout_base_s=0.5,
-            timeout_delta_s=0.3,
-        )
-        follower.state = ElectionState.FOLLOWER
-        follower.current_host_ip = "10.0.0.1"
-        follower.current_host_join_index = 0
-        follower.known_peers = {"10.0.0.1"}
-        # Host 10.0.0.1 becomes unresponsive
-        follower.on_claim_unresponsive("10.0.0.1")
-        assert follower.state == ElectionState.ELECTION_PENDING
-        # Set timer and let it fire
-        t0 = 1000.0
-        follower.set_election_timer(t0)
-        # Timer for join_index=1: 0.5 + 1 * 0.3 = 0.8
-        event = follower.tick(t0 + 0.8)
-        assert isinstance(event, SelfElected)
-        assert event.my_ip == "10.0.0.2"
-
 
 class TestElectionCoordinatorNoDoublElection:
     """ElectionCoordinator: prevent double elections and race conditions."""
@@ -279,21 +233,3 @@ class TestElectionCoordinatorNoDoublElection:
 
 class TestElectionCoordinatorStateInfo:
     """ElectionCoordinator: debugging and introspection."""
-
-    def test_get_state_info(self):
-        """get_state_info() returns current state snapshot."""
-        coordinator = ElectionCoordinator(
-            join_index=1,
-            my_ip="10.0.0.2",
-            timeout_base_s=0.5,
-            timeout_delta_s=0.3,
-        )
-        info = coordinator.get_state_info()
-        assert info["state"] == "idle"
-        assert info["join_index"] == 1
-        assert info["my_ip"] == "10.0.0.2"
-        assert info["current_host_ip"] is None
-        # After state change
-        coordinator.start_election(set())
-        info = coordinator.get_state_info()
-        assert info["state"] == "election_pending"

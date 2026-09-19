@@ -1,8 +1,6 @@
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_UDP_PORT = 50000
-DEFAULT_TCP_PORT = 50001
 HOST_UDP_PORT = 50010
-CLIENT_UDP_PORT = 50011
 UDP_MAX_PACKET_SIZE = 65535
 DEFAULT_PACKET_DROP_RATE = 0.0
 HOST_PLAYER_ID = "player1"
@@ -42,7 +40,6 @@ LOBBY_TIMEOUT = 30.0  # seconds to wait for a lobby handshake reply before givin
 
 TICK_RATE = 60
 TICK_INTERVAL = 1.0 / TICK_RATE
-DIVERGENCE_THRESHOLD = 5.0
 
 # Remote snapshot smoothing and loss-tolerance timings.
 SNAPSHOT_TIMEOUT = 0.15
@@ -94,7 +91,6 @@ dies with the crashed host if its containers were on the same machine."""
 
 WINDOW_WIDTH = int(BASE_WINDOW_WIDTH * WORLD_SCALE)
 WINDOW_HEIGHT = int(BASE_WINDOW_HEIGHT * WORLD_SCALE)
-WINDOW_TITLE = "Distributed SMB"
 
 PLAYER_WIDTH = int(50 * WORLD_SCALE)
 PLAYER_HEIGHT = int(50 * WORLD_SCALE)
@@ -109,12 +105,6 @@ RESPAWN_DELAY_S = 3.0
 # How long the victory overlay stays on screen before returning to the lobby.
 # Host and client each time this independently off their own frame.victory.
 VICTORY_OVERLAY_DURATION_S = 3.0
-
-# DIVERGENCE_THRESHOLD: positional error (px) above which the client rolls
-# back to the authoritative state and replays buffered inputs. Lower values
-# give a more authoritative feel but trigger more rollbacks on a noisy link;
-# higher values feel smoother but tolerate more visual desync.
-DIVERGENCE_THRESHOLD: float = 20.0
 
 # INPUT_HISTORY_SIZE: number of frames kept in the circular input buffer for
 # post-rollback replay. At 60 fps this covers 1 second of history, which is

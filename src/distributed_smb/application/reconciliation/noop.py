@@ -18,12 +18,5 @@ class NoopPredictionEngine:
         if self._engine is not None:
             self._engine.world_state = authoritative_snapshot.world_state
 
-    def should_rollback(
-        self,
-        predicted: tuple[float, float],
-        authoritative: tuple[float, float],
-    ) -> bool:
-        return False
-
     def pending_count(self) -> int:
         return 0

@@ -48,6 +48,21 @@ def _make_client() -> NodeController:
     return ctrl
 
 
+def _join_or_cancel(stop: threading.Event, *threads: threading.Thread) -> None:
+    """Join lobby threads, cancelling any still waiting so the process can exit.
+
+    Lobby waits have no deadline: a thread stuck in one (e.g. a message that
+    never arrives) would spin forever and keep pytest from ever terminating.
+    Setting ``stop`` makes their on_update callback return False, which ends
+    the wait with LobbyCancelledError.
+    """
+    for t in threads:
+        t.join(timeout=10.0)
+    stop.set()
+    for t in threads:
+        t.join(timeout=2.0)
+
+
 # ---------------------------------------------------------------------------
 # Host-only: the host triggers the start manually, no real client needed
 # ---------------------------------------------------------------------------
@@ -73,13 +88,17 @@ def test_host_lobby_phase_single_player():
 def test_host_and_client_lobby_phase():
     host = _make_host()
     client = _make_client()
+    stop = threading.Event()
 
     errors = []
 
     def run_host():
         try:
             with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                host.lobby_phase(start_requested=lambda: len(host.roster.players) >= 2)
+                host.lobby_phase(
+                    start_requested=lambda: len(host.roster.players) >= 2,
+                    on_update=lambda *a: not stop.is_set(),
+                )
         except Exception as exc:
             errors.append(exc)
 
@@ -89,18 +108,17 @@ def test_host_and_client_lobby_phase():
         while not host.session_id and time.time() < deadline:
             time.sleep(0.05)
         try:
-            client.lobby_phase(session_id=host.session_id)
+            client.lobby_phase(session_id=host.session_id, on_update=lambda *a: not stop.is_set())
         except Exception as exc:
             errors.append(exc)
 
-    t_host = threading.Thread(target=run_host)
-    t_client = threading.Thread(target=run_client)
+    t_host = threading.Thread(target=run_host, daemon=True)
+    t_client = threading.Thread(target=run_client, daemon=True)
 
     t_host.start()
     t_client.start()
 
-    t_host.join(timeout=10.0)
-    t_client.join(timeout=10.0)
+    _join_or_cancel(stop, t_host, t_client)
 
     assert not errors, errors
     assert len(host.roster.players) == 2
@@ -129,13 +147,17 @@ def test_host_solo_world_has_only_one_player():
 def test_replay_lobby_phase_resets_engine_without_new_session():
     host = _make_host()
     client = _make_client()
+    stop = threading.Event()
 
     errors = []
 
     def run_host():
         try:
             with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                host.lobby_phase(start_requested=lambda: len(host.roster.players) >= 2)
+                host.lobby_phase(
+                    start_requested=lambda: len(host.roster.players) >= 2,
+                    on_update=lambda *a: not stop.is_set(),
+                )
         except Exception as exc:
             errors.append(exc)
 
@@ -144,16 +166,15 @@ def test_replay_lobby_phase_resets_engine_without_new_session():
         while not host.session_id and time.time() < deadline:
             time.sleep(0.05)
         try:
-            client.lobby_phase(session_id=host.session_id)
+            client.lobby_phase(session_id=host.session_id, on_update=lambda *a: not stop.is_set())
         except Exception as exc:
             errors.append(exc)
 
-    t_host = threading.Thread(target=run_host)
-    t_client = threading.Thread(target=run_client)
+    t_host = threading.Thread(target=run_host, daemon=True)
+    t_client = threading.Thread(target=run_client, daemon=True)
     t_host.start()
     t_client.start()
-    t_host.join(timeout=10.0)
-    t_client.join(timeout=10.0)
+    _join_or_cancel(stop, t_host, t_client)
     assert not errors, errors
 
     original_session_id = host.session_id
@@ -161,25 +182,29 @@ def test_replay_lobby_phase_resets_engine_without_new_session():
     host.engine.world_state.victory_player_id = "player1"
     host.engine.world_state.environment.destructible_blocks[0].destroyed = True
 
+    stop_replay = threading.Event()
+
     def replay_host():
         try:
             with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                host.replay_lobby_phase(start_requested=lambda: True)
+                host.replay_lobby_phase(
+                    start_requested=lambda: True,
+                    on_update=lambda *a: not stop_replay.is_set(),
+                )
         except Exception as exc:
             errors.append(exc)
 
     def replay_client():
         try:
-            client.replay_lobby_phase()
+            client.replay_lobby_phase(on_update=lambda *a: not stop_replay.is_set())
         except Exception as exc:
             errors.append(exc)
 
-    t_host = threading.Thread(target=replay_host)
-    t_client = threading.Thread(target=replay_client)
+    t_host = threading.Thread(target=replay_host, daemon=True)
+    t_client = threading.Thread(target=replay_client, daemon=True)
     t_host.start()
     t_client.start()
-    t_host.join(timeout=10.0)
-    t_client.join(timeout=10.0)
+    _join_or_cancel(stop_replay, t_host, t_client)
 
     assert not errors, errors
     assert host.session_id == original_session_id

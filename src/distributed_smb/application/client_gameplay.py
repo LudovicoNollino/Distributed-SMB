@@ -30,7 +30,6 @@ from distributed_smb.shared.config import (
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.election import (
     ElectionAck,
-    ElectionNack,
     NewHostClaim,
     ReconnectionAck,
 )
@@ -213,9 +212,6 @@ class ClientGameplayMixin:
     # ------------------------------------------------------------------
     # Election event handlers (called from _drain_game_events)
     # ------------------------------------------------------------------
-
-    def _on_election_nack(self, msg: ElectionNack) -> None:
-        pass
 
     def _on_reconnection_ack(self, ack: ReconnectionAck) -> None:
         if self.reconnected or self._promotion_done:

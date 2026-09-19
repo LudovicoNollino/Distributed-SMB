@@ -8,7 +8,6 @@ from distributed_smb.shared.config import UDP_INPUT_TIMEOUT
 from distributed_smb.shared.mappers.gameplay_mapper import event_to_message
 from distributed_smb.shared.messages.election import (
     ElectionAck,
-    ElectionNack,
     NewHostClaim,
     ReconnectionAck,
 )
@@ -118,9 +117,6 @@ class GameEventMixin:
             elif isinstance(msg, ElectionAck):
                 LOGGER.info("election: ElectionAck from %s", msg.from_ip)
                 self._on_election_ack(msg)
-            elif isinstance(msg, ElectionNack):
-                LOGGER.info("election: ElectionNack from %s (%s)", msg.from_ip, msg.reason)
-                self._on_election_nack(msg)
             elif isinstance(msg, ReconnectionAck):
                 LOGGER.info("election: ReconnectionAck from new host %s", msg.new_host_ip)
                 self._on_reconnection_ack(msg)

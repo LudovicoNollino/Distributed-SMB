@@ -62,34 +62,6 @@ class ElectionAck:
 
 
 @dataclass(slots=True)
-class ElectionNack:
-    """Unicast reply to NewHostClaim: peer rejects the claim.
-
-    Sent if the claimer is not the node with the lowest JoinIndex (race condition).
-    Causes the claimer to revert to FOLLOWER state and not claim hostship.
-
-    Attributes:
-        from_ip: IP address of the peer sending this NACK.
-        session_id: Session ID to match against the NewHostClaim.
-        reason: Human-readable reason for rejection (e.g., "lower_join_index_available").
-        message_type: MessageType.ELECTION_NACK.
-    """
-
-    from_ip: str
-    session_id: str
-    reason: str
-    message_type: MessageType = field(init=False, default=MessageType.ELECTION_NACK)
-
-    def __post_init__(self):
-        if not self.from_ip or not isinstance(self.from_ip, str):
-            raise MessageValidationError(f"Invalid from_ip: {self.from_ip}")
-        if not self.session_id or not isinstance(self.session_id, str):
-            raise MessageValidationError(f"Invalid session_id: {self.session_id}")
-        if not self.reason or not isinstance(self.reason, str):
-            raise MessageValidationError(f"Invalid reason: {self.reason}")
-
-
-@dataclass(slots=True)
 class ReconnectionAck:
     """Sent by the newly promoted host to each surviving client.
 

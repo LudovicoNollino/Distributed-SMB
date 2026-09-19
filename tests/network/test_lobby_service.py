@@ -163,7 +163,7 @@ def test_game_start_marks_session_active():
 
 
 # ---------------------------------------------------------------------------
-# register_active_session + poll_new_joiners (M9 rejoin)
+# register_active_session (M9 rejoin)
 # ---------------------------------------------------------------------------
 
 
@@ -177,26 +177,6 @@ def test_register_active_session_creates_active_session():
     lobby_manager.register_active_session("abc123", roster, next_join_index=2)
 
     assert lobby_manager.is_active("abc123")
-
-
-def test_poll_new_joiners_returns_only_unknown_entries():
-    from distributed_smb.shared.roster import GlobalRoster, RosterEntry
-
-    roster = GlobalRoster()
-    roster.add_player(
-        RosterEntry(player_id="player2", host="10.0.0.2", udp_port=50010, join_index=1)
-    )
-    lobby_manager.register_active_session("abc123", roster, next_join_index=2)
-
-    # join_index=1 already known — should not be returned
-    new_entries = lobby_manager.poll_new_joiners("abc123", known_join_indices={1})
-    assert new_entries == []
-
-    # after a new player joins, join_index=2 appears
-    lobby_manager.join_session("abc123", "player3", "10.0.0.3", 49500)
-    new_entries = lobby_manager.poll_new_joiners("abc123", known_join_indices={1})
-    assert len(new_entries) == 1
-    assert new_entries[0]["join_index"] == 2
 
 
 def test_session_join_for_active_session_sends_game_start_immediately():

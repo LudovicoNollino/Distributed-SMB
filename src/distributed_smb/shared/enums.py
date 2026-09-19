@@ -63,7 +63,6 @@ class MessageType(StrEnum):
     # WebSocket — election and host migration
     NEW_HOST_CLAIM = "new_host_claim"
     ELECTION_ACK = "election_ack"
-    ELECTION_NACK = "election_nack"
     RECONNECTION_ACK = "reconnection_ack"
 
     # Event messages
