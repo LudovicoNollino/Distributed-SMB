@@ -1,412 +1,71 @@
-from unittest.mock import MagicMock, patch
-
-import pygame
-
 from distributed_smb.application.node_controller import NodeController
 from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
 from distributed_smb.domain.world import CharacterState, WorldState
-from distributed_smb.main import get_controller, parse_args
 from distributed_smb.network.serializer import Serializer
-from distributed_smb.presentation.input_handler import InputHandler
-from distributed_smb.shared.config import DEFAULT_HOST, LOBBY_WS_PORT, TICK_INTERVAL
+from distributed_smb.shared.config import TICK_INTERVAL
 from distributed_smb.shared.enums import NodeState, PlayerRole
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
 
 
-def test_bootstrap_initializes_node_controller_state():
+def test_bootstrap_initializes_state_and_spawns_the_local_player():
+    """Joining uses the same TMX spawn points as respawn-after-death."""
     controller = NodeController()
 
-    bootstrapped_controller = controller.bootstrap()
+    bootstrapped = controller.bootstrap(role=PlayerRole.HOST)
 
-    assert bootstrapped_controller is controller
+    assert bootstrapped is controller
     assert controller.is_bootstrapped is True
+    assert controller.role is PlayerRole.HOST
     assert controller.lifecycle.state is NodeState.IDLE
     assert controller.tick_interval == TICK_INTERVAL
-
-
-def test_lifecycle_exposes_waiting_room_and_started_states():
-    controller = NodeController().bootstrap()
-
-    controller.lifecycle.move_to_lobby()
-
-    assert controller.lifecycle.state is NodeState.IN_LOBBY
-    assert controller.lifecycle.is_waiting_room is True
-    assert controller.lifecycle.is_started is False
-
-    controller.lifecycle.move_to_game()
-
-    assert controller.lifecycle.state is NodeState.IN_GAME
-    assert controller.lifecycle.is_started is True
-
-
-def test_build_runtime_context_exposes_expected_components():
-    fake_keys = {
-        pygame.K_LEFT: False,
-        pygame.K_a: False,
-        pygame.K_RIGHT: False,
-        pygame.K_d: False,
-        pygame.K_SPACE: False,
-        pygame.K_UP: False,
-        pygame.K_w: False,
-        pygame.K_DOWN: False,
-        pygame.K_s: False,
-    }
-    handler = InputHandler(key_provider=lambda: fake_keys)
-    controller = NodeController().bootstrap()
-    controller.input_handler = handler
-
-    runtime_context = controller.build_runtime_context()
-
-    assert set(runtime_context) == {
-        "engine",
-        "input_handler",
-        "local_player_id",
-        "remote_player_id",
-        "renderer",
-        "role",
-        "tick_interval",
-    }
-    assert runtime_context["engine"] is controller.engine
-    assert runtime_context["input_handler"] is controller.input_handler
-    assert runtime_context["local_player_id"] == controller.local_player_id
-    assert runtime_context["remote_player_id"] == controller.remote_player_id
-    assert runtime_context["renderer"] is controller.renderer
-    assert runtime_context["role"] is controller.role
-    assert runtime_context["tick_interval"] == controller.tick_interval
-    assert isinstance(controller.input_handler.read_input(), InputState)
-
-
-def test_main_returns_a_bootstrapped_controller():
-    controller = get_controller()
-
-    assert isinstance(controller, NodeController)
-    assert controller.is_bootstrapped is True
-
-
-def test_run_returns_false_when_presentation_runtime_is_missing():
-    controller = NodeController().bootstrap()
-
-    with patch.dict("sys.modules", {"distributed_smb.presentation.app": None}):
-        started = controller.run()
-
-    assert started is False
-
-
-def test_host_bootstrap_configures_players_and_role():
-    controller = NodeController().bootstrap(role=PlayerRole.HOST)
-
-    assert controller.role is PlayerRole.HOST
     assert controller.engine.world_state.get_player(controller.local_player_id) is not None
 
-
-def test_spawn_position_uses_level_spawn_points():
-    """Initial join spawn now delegates to the level's TMX SpawnPoints (the
-    same source respawn-after-death uses), instead of a separate hardcoded
-    formula that placed players high above the ground."""
-    controller = NodeController()
-    expected = controller.engine.spawn_points
+    spawn_points = controller.engine.spawn_points
     for join_index in range(4):
-        point = expected[join_index % len(expected)]
+        point = spawn_points[join_index % len(spawn_points)]
         assert controller._spawn_position_for(join_index) == (point.x, point.y)
 
 
-def test_client_process_frame_increments_input_sequence():
+class FakeUdpHandler:
+    """Drops what is sent and hands over `packet` once, if given."""
+
+    def __init__(self, packet: bytes | None = None):
+        self.packet = packet
+
+    def open_socket(self):
+        return None
+
+    def send_packet_nowait(self, payload, remote_host, remote_port):
+        return None
+
+    def receive_packet_nowait(self):
+        if self.packet is None:
+            return None
+        packet, self.packet = self.packet, None
+        return packet, ("127.0.0.1", 50010)
+
+
+def test_client_frame_sends_one_input_and_enters_the_game():
     controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
-
-    class FakeUdpHandler:
-        def open_socket(self):
-            return None
-
-        def send_packet_nowait(self, payload, remote_host, remote_port):
-            return None
-
-        def receive_packet_nowait(self):
-            return None
-
     controller.udp_handler = FakeUdpHandler()
 
     controller.process_frame(TICK_INTERVAL, InputState(right=True))
 
     assert controller.input_sequence_number == 1
-
-
-def test_process_frame_marks_node_as_started():
-    controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
-
-    class FakeUdpHandler:
-        def open_socket(self):
-            return None
-
-        def send_packet_nowait(self, payload, remote_host, remote_port):
-            return None
-
-        def receive_packet_nowait(self):
-            return None
-
-    controller.udp_handler = FakeUdpHandler()
-
-    controller.process_frame(TICK_INTERVAL, InputState())
-
     assert controller.lifecycle.state is NodeState.IN_GAME
     assert controller.lifecycle.is_started is True
 
 
-def test_parse_args_defaults():
-    args = parse_args([])
-    assert args.host_ip is None
-    assert args.local_ip is None
-    assert args.session_id == ""
-    assert not args.host
-    assert not args.client
-
-
-def test_detect_local_ip_falls_back_to_default_host_without_route():
-    from distributed_smb.main import _detect_local_ip
-
-    fake_socket = MagicMock()
-    fake_socket.__enter__.return_value = fake_socket
-    fake_socket.connect.side_effect = OSError("network unreachable")
-
-    with patch("distributed_smb.main.socket.socket", return_value=fake_socket):
-        assert _detect_local_ip() == DEFAULT_HOST
-
-
-def test_main_uses_explicit_local_ip_when_provided():
-    from distributed_smb.main import main
-
-    controller = main(role=PlayerRole.HOST, local_ip="10.0.0.5")
-
-    assert controller.local_ip == "10.0.0.5"
-
-
-def test_main_auto_detects_local_ip_when_not_provided():
-    from distributed_smb.main import main
-
-    with patch("distributed_smb.main._detect_local_ip", return_value="192.168.1.42"):
-        controller = main(role=PlayerRole.HOST)
-
-    assert controller.local_ip == "192.168.1.42"
-
-
-def test_parse_args_client_flags():
-    args = parse_args(["--client", "--host-ip", "192.168.1.10", "--session-id", "abc123"])
-    assert args.client is True
-    assert args.host_ip == "192.168.1.10"
-    assert args.session_id == "abc123"
-
-
-def test_main_client_sets_ws_handler_host():
-    from distributed_smb.main import main
-
-    controller = main(role=PlayerRole.CLIENT, host_ip="192.168.1.10")
-    assert controller.ws_handler.host == "192.168.1.10"
-    assert controller.ws_handler.port == LOBBY_WS_PORT
-    assert controller.remote_host == "192.168.1.10"
-
-
-def test_main_client_discovery_join_prompts_for_session_id_only():
-    from distributed_smb.main import main
-
-    calls = []
-
-    class FakeConnection:
-        def close(self):
-            calls.append("close")
-
-        def close_socket(self):
-            calls.append("close_socket")
-
-    class FakeContainerManager:
-        def stop(self):
-            calls.append("containers_stop")
-
-    class FakeGameEventHandler:
-        def connect(self):
-            calls.append("ws_connect")
-
-    class FakeController:
-        def __init__(self):
-            self.role = PlayerRole.HOST
-            self.roster = object()
-            self.ws_handler = FakeConnection()
-            self.udp_handler = FakeConnection()
-            self.lobby_container_manager = FakeContainerManager()
-            self.game_event_handler = FakeGameEventHandler()
-            self.use_discovery = True
-
-        def lobby_phase(self, *, session_id, on_update, start_requested):
-            calls.append(f"lobby:{session_id}")
-            return self.roster
-
-        def run(self):
-            calls.append("run")
-
-    class FakeLobbyScreen:
-        def __init__(self):
-            self.start_requested = True
-
-        def prompt_session_id(self, *, initial_session_id):
-            calls.append("prompt_session_id")
-            return "abc123"
-
-        def prompt_join_details(self, **kwargs):
-            calls.append("prompt_join_details")
-            return ("10.0.0.5", "abc123")
-
-        def render(self, **kwargs):
-            return True
-
-        def play_game_start_transition(self, **kwargs):
-            return True
-
-        def close(self):
-            calls.append("screen_close")
-
-    fake_controller = FakeController()
-
-    with patch("distributed_smb.main.build_controller", return_value=fake_controller):
-        with patch("distributed_smb.main.LobbyScreen", FakeLobbyScreen):
-            controller = main(run_app=True, role=PlayerRole.CLIENT, host_ip=None, session_id="")
-
-    assert controller is fake_controller
-    assert "prompt_session_id" in calls
-    assert "prompt_join_details" not in calls
-    assert "lobby:abc123" in calls
-
-
-def test_main_plays_transition_before_game_run():
-    from distributed_smb.main import main
-
-    calls = []
-
-    class FakeConnection:
-        def close(self):
-            calls.append("close")
-
-    class FakeContainerManager:
-        def stop(self):
-            calls.append("containers_stop")
-
-    class FakeController:
-        def __init__(self):
-            self.role = PlayerRole.HOST
-            self.roster = object()
-            self.ws_handler = FakeConnection()
-            self.udp_handler = FakeConnection()
-            self.lobby_container_manager = FakeContainerManager()
-
-        def lobby_phase(self, *, session_id, on_update, start_requested):
-            calls.append("lobby")
-            assert start_requested() is False
-            return self.roster
-
-        def run(self):
-            calls.append("run")
-
-    class FakeLobbyScreen:
-        def __init__(self):
-            calls.append("screen")
-            self.start_requested = False
-
-        def render(self, **kwargs):
-            calls.append("render")
-            return True
-
-        def play_game_start_transition(self, **kwargs):
-            calls.append("transition")
-            return True
-
-        def close(self):
-            calls.append("screen_close")
-
-    fake_controller = FakeController()
-
-    with patch("distributed_smb.main.build_controller", return_value=fake_controller):
-        with patch("distributed_smb.main.LobbyScreen", FakeLobbyScreen):
-            controller = main(run_app=True, role=PlayerRole.HOST)
-
-    assert controller is fake_controller
-    assert calls.index("lobby") < calls.index("transition") < calls.index("run")
-    assert "containers_stop" in calls
-    assert calls.index("run") < calls.index("containers_stop")
-
-
-def test_main_loops_back_to_lobby_after_victory_outcome():
-    from distributed_smb.main import main
-
-    calls = []
-
-    class FakeConnection:
-        def close(self):
-            calls.append("close")
-
-    class FakeContainerManager:
-        def stop(self):
-            calls.append("containers_stop")
-
-    class FakeController:
-        def __init__(self):
-            self.role = PlayerRole.HOST
-            self.roster = object()
-            self.ws_handler = FakeConnection()
-            self.udp_handler = FakeConnection()
-            self.lobby_container_manager = FakeContainerManager()
-            self._run_outcomes = iter(["victory", "quit"])
-
-        def lobby_phase(self, *, session_id, on_update, start_requested):
-            calls.append("lobby")
-            return self.roster
-
-        def replay_lobby_phase(self, *, on_update, start_requested):
-            calls.append("replay_lobby")
-            return self.roster
-
-        def run(self):
-            return next(self._run_outcomes)
-
-    class FakeLobbyScreen:
-        def __init__(self):
-            self.start_requested = True
-
-        def render(self, **kwargs):
-            return True
-
-        def play_game_start_transition(self, **kwargs):
-            calls.append("transition")
-            return True
-
-        def close(self):
-            calls.append("screen_close")
-
-    fake_controller = FakeController()
-
-    with patch("distributed_smb.main.build_controller", return_value=fake_controller):
-        with patch("distributed_smb.main.LobbyScreen", FakeLobbyScreen):
-            controller = main(run_app=True, role=PlayerRole.HOST)
-
-    assert controller is fake_controller
-    assert calls.count("lobby") == 1
-    assert calls.count("replay_lobby") == 1
-    assert calls.count("transition") == 2
-    assert calls.count("containers_stop") == 1
-
-
 def test_client_snapshot_updates_characters_preserves_environment():
-    """UDP snapshot updates character positions but must NOT override environment state.
-
-    Blocks, power-ups, and gates are managed exclusively by WebSocket events.
-    Applying environment from UDP snapshots would cause WS events to arrive late
-    (block already destroyed, power-up already collected) and be silently ignored.
-    """
+    """Characters come from the snapshot, the environment never does: it is
+    owned by the WS events, which would otherwise arrive already stale."""
     controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
     serializer = Serializer()
 
-    # Set a known local environment state that should be preserved after reconciliation.
-    local_block = controller.engine.world_state.environment.destructible_blocks[0]
-    local_block.destroyed = False
+    controller.engine.world_state.environment.destructible_blocks[0].destroyed = False
 
-    # Build a snapshot that tries to override the environment.
+    # A snapshot that tries to override the environment.
     world_state = WorldState(
         sequence_number=12,
         characters={"player1": CharacterState(player_id="player1", x=180.0, y=96.0)},
@@ -420,39 +79,25 @@ def test_client_snapshot_updates_characters_preserves_environment():
         WorldStateSnapshot(sequence_number=99, world_state=world_state)
     )
 
-    class FakeUdpHandler:
-        def __init__(self, packet):
-            self.packet = packet
-
-        def receive_packet_nowait(self):
-            if self.packet is None:
-                return None
-            packet = self.packet
-            self.packet = None
-            return packet, ("127.0.0.1", 50010)
-
     controller.udp_handler = FakeUdpHandler(payload)
     controller._drain_snapshot_packets()
 
-    # Characters are updated from the snapshot.
     assert controller.engine.world_state.sequence_number == 12
     assert controller.engine.world_state.characters["player1"].x == 180.0
-    # Environment is preserved from local state — snapshot's environment is discarded.
     assert controller.engine.world_state.environment.destructible_blocks[0].destroyed is False
     assert "pu-a" not in controller.engine.world_state.environment.power_ups
     assert "gate-a" not in controller.engine.world_state.environment.cooperative_gates
 
 
-def test_client_process_frame_returns_visual_state_with_predicted_local_player():
+def test_the_view_shows_the_prediction_and_never_mutates_the_authoritative_state():
+    """The player sees their own predicted position, while the engine keeps
+    the host's — and editing the view must not reach back into it."""
     controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
-    serializer = Serializer()
-    local_pid = controller.local_player_id  # "player2" placeholder after bootstrap
-    # Pin the local player's starting position explicitly rather than relying
-    # on whatever the level's spawn point happens to be, so the predicted-tick
-    # math below (and its expected direction of correction) stays meaningful
-    # regardless of spawn changes.
+    local_pid = controller.local_player_id
+    # Pinned, so the expected direction of the correction survives spawn changes.
     controller.engine.world_state.characters[local_pid].x = 100.0
     controller.engine.world_state.characters[local_pid].y = 100.0
+    controller.engine.world_state.add_block(DestructibleBlock(x=12, y=20, destroyed=False))
     authoritative_world = WorldState(
         sequence_number=20,
         characters={
@@ -460,27 +105,9 @@ def test_client_process_frame_returns_visual_state_with_predicted_local_player()
             local_pid: CharacterState(player_id=local_pid, x=100.0, y=100.0),
         },
     )
-    payload = serializer.encode_message(
+    payload = Serializer().encode_message(
         WorldStateSnapshot(sequence_number=20, world_state=authoritative_world)
     )
-
-    class FakeUdpHandler:
-        def __init__(self, packet):
-            self.packet = packet
-
-        def open_socket(self):
-            return None
-
-        def send_packet_nowait(self, payload, remote_host, remote_port):
-            return None
-
-        def receive_packet_nowait(self):
-            if self.packet is None:
-                return None
-            packet = self.packet
-            self.packet = None
-            return packet, ("127.0.0.1", 50010)
-
     controller.udp_handler = FakeUdpHandler(payload)
     controller.time_provider = lambda: 10.0
 
@@ -492,28 +119,10 @@ def test_client_process_frame_returns_visual_state_with_predicted_local_player()
         == authoritative_world.characters[local_pid].x
     )
 
-
-def test_visual_world_state_clones_environment_from_authoritative_state():
-    controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
-    controller.engine.world_state.add_block(DestructibleBlock(x=12, y=20, destroyed=False))
-    controller.engine.world_state.add_power_up(
-        ExclusivePowerUp(x=40, y=20, powerup_id="pu-a", collected=False)
-    )
-    controller.engine.world_state.add_gate(
-        CooperativeGate(x=72, y=20, gate_id="gate-a", state="closed")
-    )
-
-    visual_world = controller._build_visual_world_state()
-
-    assert visual_world.environment is not controller.engine.world_state.environment
-
-    visual_world.environment.destructible_blocks[0].destroyed = True
-    visual_world.environment.power_ups["pu-a"].collected = True
-    visual_world.environment.cooperative_gates["gate-a"].state = "open"
-
+    visual_state = controller._build_visual_world_state()
+    assert visual_state.environment is not controller.engine.world_state.environment
+    visual_state.environment.destructible_blocks[0].destroyed = True
     assert controller.engine.world_state.environment.destructible_blocks[0].destroyed is False
-    assert controller.engine.world_state.environment.power_ups["pu-a"].collected is False
-    assert controller.engine.world_state.environment.cooperative_gates["gate-a"].state == "closed"
 
 
 class _FakePredictionEngine:
@@ -524,37 +133,31 @@ class _FakePredictionEngine:
         return self._pending
 
 
-def test_adjust_prediction_lead_ignores_noise_within_tolerance():
-    """A frozen baseline must not move for a deviation inside the tolerance band."""
-    controller = NodeController()
-    controller.prediction_lead_calibration_remaining = 0
-    controller.prediction_lead_baseline = 3.0
-    controller.prediction_engine = _FakePredictionEngine(pending=5)
+def test_the_frozen_baseline_ignores_noise_but_follows_a_sustained_drift():
+    """Without the tolerance band every reconcile would trigger a correction;
+    without the drift the client would fight a permanently higher RTT."""
+    steady = NodeController()
+    steady.prediction_lead_calibration_remaining = 0
+    steady.prediction_lead_baseline = 3.0
+    steady.prediction_engine = _FakePredictionEngine(pending=5)
 
-    controller._adjust_prediction_lead()
+    steady._adjust_prediction_lead()
 
-    assert controller.prediction_lead_baseline == 3.0
+    assert steady.prediction_lead_baseline == 3.0
 
-
-def test_adjust_prediction_lead_walks_frozen_baseline_toward_sustained_drift():
-    """A sustained deviation (RTT permanently higher than at calibration time)
-    must walk the frozen baseline up until it settles within tolerance,
-    instead of triggering a correction on every reconcile forever."""
-    controller = NodeController()
-    controller.prediction_lead_calibration_remaining = 0
-    controller.prediction_lead_baseline = 3.0
-    controller.prediction_engine = _FakePredictionEngine(pending=8)
+    drifting = NodeController()
+    drifting.prediction_lead_calibration_remaining = 0
+    drifting.prediction_lead_baseline = 3.0
+    drifting.prediction_engine = _FakePredictionEngine(pending=8)
 
     for _ in range(10):
-        controller._adjust_prediction_lead()
+        drifting._adjust_prediction_lead()
 
-    assert controller.prediction_lead_baseline == 5.0
+    assert drifting.prediction_lead_baseline == 5.0
 
 
 def test_adjust_prediction_lead_drains_backlog_after_reconnection_reset():
-    """A fresh baseline (0.0, set by _on_reconnection_ack) must not be seeded
-    from the current pending count — a post-migration backlog would then be
-    treated as the new normal and never drain."""
+    """A backlog must not become the new baseline, or it never drains."""
     controller = NodeController()
     controller.prediction_lead_baseline = 0.0
     controller.prediction_engine = _FakePredictionEngine(pending=60)

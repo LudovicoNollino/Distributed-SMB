@@ -1,8 +1,6 @@
 """End-to-end localhost integration test: lobby coordination + UDP gameplay."""
 
-import threading
 import time
-from unittest.mock import patch
 
 import pytest
 
@@ -16,11 +14,6 @@ from distributed_smb.shared.input import InputState
 
 TEST_WS_PORT = 59300
 FRAME_DT = 1 / 60
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -37,139 +30,22 @@ def reset_lobby():
     lobby_manager.reset()
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _run_lobby(host: NodeController, client: NodeController) -> list:
-    errors = []
-
-    def run_host():
-        try:
-            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                host.lobby_phase(start_requested=lambda: len(host.roster.players) >= 2)
-        except Exception as exc:
-            errors.append(exc)
-
-    def run_client():
-        deadline = time.time() + 5.0
-        while not host.session_id and time.time() < deadline:
-            time.sleep(0.05)
-        try:
-            client.lobby_phase(session_id=host.session_id)
-        except Exception as exc:
-            errors.append(exc)
-
-    t_host = threading.Thread(target=run_host)
-    t_client = threading.Thread(target=run_client)
-    t_host.start()
-    t_client.start()
-    t_host.join(timeout=10.0)
-    t_client.join(timeout=10.0)
-
-    return errors
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
-def test_lobby_produces_consistent_session():
-    """Both nodes finish lobby with the same session_id and a 2-player roster."""
-    host = NodeController(
+def _make_node(role: PlayerRole) -> NodeController:
+    node = NodeController(
         game_event_broker=NoopGameEventBroker(),
         lobby_service=NoopLobbyService(),
-    ).bootstrap(role=PlayerRole.HOST)
-    host.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
-
-    client = NodeController(
-        game_event_broker=NoopGameEventBroker(),
-        lobby_service=NoopLobbyService(),
-    ).bootstrap(role=PlayerRole.CLIENT)
-    client.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
-
-    errors = _run_lobby(host, client)
-
-    assert not errors, errors
-    assert host.session_id == client.session_id
-    assert host.session_id != ""
-    assert len(host.roster.players) == 2
-    assert len(client.roster.players) == 2
+    ).bootstrap(role=role)
+    node.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
+    return node
 
 
-def test_world_contains_only_roster_players_after_lobby():
-    """After lobby_phase the world has exactly the two roster players — no extras."""
-    host = NodeController(
-        game_event_broker=NoopGameEventBroker(),
-        lobby_service=NoopLobbyService(),
-    ).bootstrap(role=PlayerRole.HOST)
-    host.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
+def test_client_input_moves_its_player_on_the_host_over_udp(run_lobby_pair):
+    """After the lobby, client input reaches the host over real UDP and the
+    host's snapshots reach the client back."""
+    host = _make_node(PlayerRole.HOST)
+    client = _make_node(PlayerRole.CLIENT)
 
-    client = NodeController(
-        game_event_broker=NoopGameEventBroker(),
-        lobby_service=NoopLobbyService(),
-    ).bootstrap(role=PlayerRole.CLIENT)
-    client.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
-
-    _run_lobby(host, client)
-
-    assert set(host.engine.world_state.characters) == {"player1", "player2"}
-    assert set(client.engine.world_state.characters) == {"player1", "player2"}
-
-
-def test_udp_gameplay_frames_are_exchanged():
-    """After lobby, host and client exchange real UDP packets over localhost."""
-    host = NodeController(
-        game_event_broker=NoopGameEventBroker(),
-        lobby_service=NoopLobbyService(),
-    ).bootstrap(role=PlayerRole.HOST)
-    host.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
-
-    client = NodeController(
-        game_event_broker=NoopGameEventBroker(),
-        lobby_service=NoopLobbyService(),
-    ).bootstrap(role=PlayerRole.CLIENT)
-    client.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
-
-    errors = _run_lobby(host, client)
-    assert not errors, errors
-
-    # Drive several interleaved frames:
-    #   client sends PlayerInputPacket → host receives it
-    #   host sends WorldStateSnapshot → client receives it
-    ROUNDS = 10
-    for _ in range(ROUNDS):
-        client.process_frame(FRAME_DT, InputState(right=True))
-        time.sleep(0.02)
-        host.process_frame(FRAME_DT, InputState())
-        time.sleep(0.02)
-
-    host.udp_handler.close_socket()
-    client.udp_handler.close_socket()
-
-    assert host.received_input_packets > 0, (
-        "Host received no PlayerInputPacket from client over UDP"
-    )
-    assert client.received_snapshots > 0, "Client received no WorldStateSnapshot from host over UDP"
-
-
-def test_host_applies_client_input_to_world():
-    """The host's authoritative world state moves player2 when client sends right input."""
-    host = NodeController(
-        game_event_broker=NoopGameEventBroker(),
-        lobby_service=NoopLobbyService(),
-    ).bootstrap(role=PlayerRole.HOST)
-    host.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
-
-    client = NodeController(
-        game_event_broker=NoopGameEventBroker(),
-        lobby_service=NoopLobbyService(),
-    ).bootstrap(role=PlayerRole.CLIENT)
-    client.ws_handler = WsHandler("127.0.0.1", TEST_WS_PORT)
-
-    errors = _run_lobby(host, client)
+    errors = run_lobby_pair(host, client)
     assert not errors, errors
 
     initial_x = host.engine.world_state.characters["player2"].x
@@ -183,7 +59,6 @@ def test_host_applies_client_input_to_world():
     host.udp_handler.close_socket()
     client.udp_handler.close_socket()
 
-    final_x = host.engine.world_state.characters["player2"].x
-    assert final_x > initial_x, (
-        f"player2 did not move right on host: initial_x={initial_x}, final_x={final_x}"
-    )
+    assert host.received_input_packets > 0
+    assert client.received_snapshots > 0
+    assert host.engine.world_state.characters["player2"].x > initial_x

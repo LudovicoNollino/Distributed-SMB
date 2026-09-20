@@ -74,17 +74,4 @@ def test_build_render_frame_maps_every_field():
     assert frame.decorations[0].kind == "cloud"
     assert frame.decorations[0].x == 50
 
-
-def test_build_render_frame_respawning_player_ids_uses_keys_not_timestamps():
-    world_state = _world_state()
-
-    frame = build_render_frame(
-        world_state=world_state,
-        platforms=[],
-        decorations=[],
-        focus_player_id=None,
-        world_width=0,
-        world_height=0,
-    )
-
     assert frame.respawning_player_ids == frozenset({"player2"})

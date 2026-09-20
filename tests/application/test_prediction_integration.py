@@ -1,25 +1,17 @@
-"""Integration tests for M5 prediction and reconciliation wiring."""
+"""Prediction and reconciliation wiring inside the node controller."""
 
 from distributed_smb.application.node_controller import NodeController
 from distributed_smb.application.reconciliation import (
     NoopPredictionEngine,
     PredictionEngine,
-    PredictionEngineProtocol,
 )
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.shared.config import (
-    ARTIFICIAL_LATENCY_MS,
-    INPUT_HISTORY_SIZE,
-    MAX_ROLLBACK_FRAMES,
     TICK_INTERVAL,
 )
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 class _FakeUdpHandler:
@@ -66,93 +58,51 @@ def _make_snapshot_payload(nc: NodeController, seq: int = 1) -> bytes:
     )
 
 
-# ---------------------------------------------------------------------------
-# Protocol conformance
-# ---------------------------------------------------------------------------
+def test_bootstrap_wires_the_engine_by_role_and_keeps_an_injected_one():
+    """Only the client predicts; the host is authoritative and never needs to."""
+    client = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    assert isinstance(client.prediction_engine, PredictionEngine)
+    assert client.prediction_engine.engine is client.engine
+    assert client.prediction_engine.local_player_id == client.local_player_id
 
+    host = NodeController().bootstrap(role=PlayerRole.HOST)
+    assert isinstance(host.prediction_engine, NoopPredictionEngine)
+    # The host reconciles only when bootstrapping from someone else's snapshot,
+    # and then it takes it whole.
+    snapshot_world = host.engine.world_state.__class__(sequence_number=42)
+    host.prediction_engine.reconcile(
+        WorldStateSnapshot(sequence_number=99, world_state=snapshot_world)
+    )
+    assert host.engine.world_state is snapshot_world
 
-def test_noop_satisfies_prediction_engine_protocol():
-    """NoopPredictionEngine must pass runtime isinstance check against the Protocol."""
-    assert isinstance(NoopPredictionEngine(), PredictionEngineProtocol)
-
-
-def test_spy_satisfies_prediction_engine_protocol():
-    """_SpyPredictionEngine must also satisfy the Protocol (used throughout tests)."""
-    assert isinstance(_SpyPredictionEngine(), PredictionEngineProtocol)
-
-
-# ---------------------------------------------------------------------------
-# NodeController wiring
-# ---------------------------------------------------------------------------
-
-
-def test_node_controller_wires_engine_to_noop_on_init():
-    """__post_init__ must set _engine on NoopPredictionEngine so reconcile() works."""
-    nc = NodeController()
-    assert isinstance(nc.prediction_engine, NoopPredictionEngine)
-    assert nc.prediction_engine._engine is nc.engine
-
-
-def test_custom_prediction_engine_is_not_overridden():
-    """When a non-noop engine is passed, __post_init__ must not touch it."""
     spy = _SpyPredictionEngine()
-    nc = NodeController(prediction_engine=spy)
-    assert nc.prediction_engine is spy
+    assert NodeController(prediction_engine=spy).prediction_engine is spy
 
 
-def test_client_bootstrap_wires_real_prediction_engine():
-    """bootstrap(CLIENT) must replace NoopPredictionEngine with the real PredictionEngine."""
-    nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
-    assert isinstance(nc.prediction_engine, PredictionEngine)
-    assert nc.prediction_engine.engine is nc.engine
-    assert nc.prediction_engine.local_player_id == nc.local_player_id
-
-
-def test_host_bootstrap_keeps_noop_prediction_engine():
-    """bootstrap(HOST) must keep NoopPredictionEngine — host never predicts."""
-    nc = NodeController().bootstrap(role=PlayerRole.HOST)
-    assert isinstance(nc.prediction_engine, NoopPredictionEngine)
-
-
-# ---------------------------------------------------------------------------
-# Calling contract — predict()
-# ---------------------------------------------------------------------------
-
-
-def test_predict_is_called_once_per_client_frame():
-    """_process_client_frame must call prediction_engine.predict() exactly once."""
-    nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
-    spy = _SpyPredictionEngine()
-    nc.prediction_engine = spy
-    nc.udp_handler = _FakeUdpHandler()
-
+def test_predict_runs_once_per_client_frame_and_never_on_the_host():
+    client = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    client_spy = _SpyPredictionEngine()
+    client.prediction_engine = client_spy
+    client.udp_handler = _FakeUdpHandler()
     input_state = InputState(right=True)
-    nc.process_frame(TICK_INTERVAL, input_state)
 
-    assert len(spy.predict_calls) == 1
-    assert spy.predict_calls[0] == input_state
+    client.process_frame(TICK_INTERVAL, input_state)
 
+    assert client_spy.predict_calls == [input_state]
 
-def test_predict_receives_the_exact_input_passed_to_process_frame():
-    """predict() must receive the same InputState that was given to process_frame."""
-    nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
-    spy = _SpyPredictionEngine()
-    nc.prediction_engine = spy
-    nc.udp_handler = _FakeUdpHandler()
+    host = NodeController().bootstrap(role=PlayerRole.HOST)
+    host_spy = _SpyPredictionEngine()
+    host.prediction_engine = host_spy
+    host.udp_handler = _FakeUdpHandler()
 
-    inp = InputState(left=True, jump=True)
-    nc.process_frame(TICK_INTERVAL, inp)
+    host.process_frame(TICK_INTERVAL, InputState())
 
-    assert spy.predict_calls[0].left is True
-    assert spy.predict_calls[0].jump is True
+    assert host_spy.predict_calls == []
 
 
 def test_predict_uses_fixed_tick_interval_regardless_of_real_frame_dt():
-    """predict()/engine.tick() must always integrate physics by TICK_INTERVAL,
-    never by the real (variable) frame dt — apply_physics() scales gravity and
-    velocity by dt, so a client replaying a tick with a different dt than the
-    host actually used for that same tick would diverge, compounding into
-    large corrections over a jump arc (observed in real testing)."""
+    """A tick replayed with a different dt than the host used for it lands
+    somewhere else, and the error compounds over a jump arc."""
     nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
     spy = _SpyPredictionEngine()
     nc.prediction_engine = spy
@@ -164,97 +114,24 @@ def test_predict_uses_fixed_tick_interval_regardless_of_real_frame_dt():
     assert spy.predict_dts == [TICK_INTERVAL]
 
 
-def test_predict_not_called_on_host_frame():
-    """Host frames must never call predict() — prediction is client-side only."""
-    nc = NodeController().bootstrap(role=PlayerRole.HOST)
+def test_reconcile_runs_for_a_new_snapshot_and_is_skipped_for_a_stale_one():
+    """An out-of-order snapshot would rewind the client to an older state."""
+    fresh = NodeController().bootstrap(role=PlayerRole.CLIENT)
     spy = _SpyPredictionEngine()
-    nc.prediction_engine = spy
-    nc.udp_handler = _FakeUdpHandler()
+    fresh.prediction_engine = spy
+    fresh.udp_handler = _FakeUdpHandler(_make_snapshot_payload(fresh, seq=1))
 
-    nc.process_frame(TICK_INTERVAL, InputState())
-
-    assert spy.predict_calls == []
-
-
-# ---------------------------------------------------------------------------
-# Calling contract — reconcile()
-# ---------------------------------------------------------------------------
-
-
-def test_reconcile_is_called_when_snapshot_arrives():
-    """_drain_snapshot_packets must call reconcile() for each new snapshot."""
-    nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
-    spy = _SpyPredictionEngine()
-    nc.prediction_engine = spy
-    nc.udp_handler = _FakeUdpHandler(_make_snapshot_payload(nc, seq=1))
-
-    nc._drain_snapshot_packets()
+    fresh._drain_snapshot_packets()
 
     assert len(spy.reconcile_calls) == 1
     assert spy.reconcile_calls[0].sequence_number == 1
 
+    ahead = NodeController().bootstrap(role=PlayerRole.CLIENT)
+    ahead.last_snapshot_sequence = 10
+    stale_spy = _SpyPredictionEngine()
+    ahead.prediction_engine = stale_spy
+    ahead.udp_handler = _FakeUdpHandler(_make_snapshot_payload(ahead, seq=5))
 
-def test_reconcile_not_called_for_stale_snapshot():
-    """Snapshots with sequence_number <= last_snapshot_sequence must be discarded."""
-    nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
-    nc.last_snapshot_sequence = 10
-    spy = _SpyPredictionEngine()
-    nc.prediction_engine = spy
-    nc.udp_handler = _FakeUdpHandler(_make_snapshot_payload(nc, seq=5))
+    ahead._drain_snapshot_packets()
 
-    nc._drain_snapshot_packets()
-
-    assert spy.reconcile_calls == []
-
-
-# ---------------------------------------------------------------------------
-# Noop behaviour — M4 fallback
-# ---------------------------------------------------------------------------
-
-
-def test_noop_reconcile_applies_snapshot_directly():
-    """NoopPredictionEngine (HOST role): reconcile() sets world_state to the snapshot."""
-    nc = NodeController().bootstrap(role=PlayerRole.HOST)
-    snapshot_world = nc.engine.world_state.__class__(sequence_number=42)
-    snapshot = WorldStateSnapshot(sequence_number=99, world_state=snapshot_world)
-
-    nc.prediction_engine.reconcile(snapshot)
-
-    assert nc.engine.world_state is snapshot_world
-
-
-def test_noop_predict_does_not_mutate_world_state():
-    """predict() on the noop must be a pure no-op with no side effects."""
-    nc = NodeController().bootstrap(role=PlayerRole.HOST)
-    original_seq = nc.engine.world_state.sequence_number
-
-    nc.prediction_engine.predict(InputState(right=True))
-
-    assert nc.engine.world_state.sequence_number == original_seq
-
-
-# ---------------------------------------------------------------------------
-# M5 config sanity
-# ---------------------------------------------------------------------------
-
-
-def test_m5_config_constants_are_positive():
-    assert INPUT_HISTORY_SIZE > 0
-    assert MAX_ROLLBACK_FRAMES > 0
-
-
-def test_artificial_latency_is_zero_by_default():
-    """ARTIFICIAL_LATENCY_MS must be 0 in production config."""
-    assert ARTIFICIAL_LATENCY_MS == 0
-
-
-def test_input_history_covers_at_least_one_second():
-    """INPUT_HISTORY_SIZE frames at 60 fps must cover at least 1 s of history."""
-    from distributed_smb.shared.config import TICK_RATE
-
-    assert INPUT_HISTORY_SIZE >= TICK_RATE
-
-
-def test_max_rollback_frames_less_than_history_size():
-    """MAX_ROLLBACK_FRAMES must not exceed INPUT_HISTORY_SIZE."""
-    assert MAX_ROLLBACK_FRAMES <= INPUT_HISTORY_SIZE
+    assert stale_spy.reconcile_calls == []

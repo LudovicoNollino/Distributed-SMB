@@ -66,25 +66,7 @@ def build_controller(
         packet_drop_rate=packet_drop_rate,
         artificial_latency_ms=artificial_latency_ms,
     )
-    controller.build_runtime_context()
     return controller
-
-
-def get_controller(
-    *,
-    role: PlayerRole = PlayerRole.HOST,
-    packet_drop_rate: float = DEFAULT_PACKET_DROP_RATE,
-    artificial_latency_ms: int = ARTIFICIAL_LATENCY_MS,
-    use_discovery: bool = False,
-) -> NodeController:
-    """Get a bootstrapped controller without starting the GUI (for testing)."""
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-    return build_controller(
-        role=role,
-        packet_drop_rate=packet_drop_rate,
-        artificial_latency_ms=artificial_latency_ms,
-        use_discovery=use_discovery,
-    )
 
 
 def _detect_local_ip() -> str:

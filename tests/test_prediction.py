@@ -17,143 +17,77 @@ def _make_snapshot(world_state: WorldState) -> WorldStateSnapshot:
     )
 
 
-def test_prediction_engine_predict_does_not_tick_engine():
-    """predict() must not advance the engine — the caller is responsible for ticking."""
+def test_predict_records_the_input_without_advancing_the_engine():
+    """The caller ticks the engine: predict() only remembers the input so the
+    reconciliation can replay it later."""
     engine = GameEngine()
     engine.spawn_player("player1")
     pe = PredictionEngine(engine=engine, local_player_id="player1")
-
     seq_before = engine.world_state.sequence_number
-    pe.predict(InputState(right=True))
-
-    assert engine.world_state.sequence_number == seq_before
-
-
-def test_prediction_engine_predict_records_input_in_buffer():
-    """predict() must push an entry into the buffer so reconcile can replay it."""
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    pe = PredictionEngine(engine=engine, local_player_id="player1")
 
     assert pe.buffer.get_unacknowledged() == []
     pe.predict(InputState(right=True))
+
+    assert engine.world_state.sequence_number == seq_before
     assert len(pe.buffer.get_unacknowledged()) == 1
 
 
-def test_prediction_engine_reconcile_applies_authoritative_state():
-    """reconcile() must set engine.world_state to the authoritative snapshot."""
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    pe = PredictionEngine(engine=engine, local_player_id="player1")
-
-    pe.predict(InputState(right=True))
-    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
-
-    authoritative = deepcopy(engine.world_state)
-    authoritative.get_player("player1").x = 999.0
-    snapshot = _make_snapshot(authoritative)
-
-    pe.reconcile(snapshot)
-
-    assert engine.world_state.get_player("player1").x == 999.0
-
-
-def test_prediction_engine_reconcile_applies_authoritative_enemy_position():
-    """Enemies have no dedicated WS event, so reconcile() must take their
-    position from the authoritative snapshot — otherwise client and host
-    diverge forever (M6-1)."""
+def test_reconcile_takes_characters_and_enemies_but_keeps_local_environment():
+    """Enemies have no WS event, so they must come from the snapshot; blocks,
+    power-ups and gates have one, so the local prediction wins."""
     engine = GameEngine()
     engine.spawn_player("player1")
     pe = PredictionEngine(engine=engine, local_player_id="player1")
 
     local_enemy = next(iter(engine.world_state.environment.enemies.values()))
     local_enemy.x = 111.0
+    engine.world_state.environment.destructible_blocks[0].destroyed = True
 
     authoritative = deepcopy(engine.world_state)
-    authoritative_enemy = next(iter(authoritative.environment.enemies.values()))
-    authoritative_enemy.x = 500.0
-    snapshot = _make_snapshot(authoritative)
-
-    pe.reconcile(snapshot)
-
-    reconciled_enemy = next(iter(engine.world_state.environment.enemies.values()))
-    assert reconciled_enemy.x == 500.0
-
-
-def test_prediction_engine_reconcile_still_preserves_local_blocks_powerups_gates():
-    """Blocks/power-ups/gates stay local — they are synced via WS events, not
-    the UDP snapshot (M4 behavior, must not regress when fixing M6-1)."""
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    pe = PredictionEngine(engine=engine, local_player_id="player1")
-
-    local_block = engine.world_state.environment.destructible_blocks[0]
-    local_block.destroyed = True
-
-    authoritative = deepcopy(engine.world_state)
+    authoritative.get_player("player1").x = 999.0
+    next(iter(authoritative.environment.enemies.values())).x = 500.0
     authoritative.environment.destructible_blocks[0].destroyed = False
-    snapshot = _make_snapshot(authoritative)
 
-    pe.reconcile(snapshot)
+    pe.reconcile(_make_snapshot(authoritative))
 
+    assert engine.world_state.get_player("player1").x == 999.0
+    assert next(iter(engine.world_state.environment.enemies.values())).x == 500.0
     assert engine.world_state.environment.destructible_blocks[0].destroyed is True
 
 
-def test_prediction_engine_reconcile_replays_pending_inputs():
-    """After reconcile, unacknowledged inputs must be replayed on top of the authoritative state."""
+def test_reconcile_replays_the_unacknowledged_inputs_and_drops_the_rest():
+    """The client re-applies what the host has not seen yet, and forgets what
+    it has: a buffer that never shrinks would replay the whole session."""
     engine = GameEngine()
     engine.spawn_player("player1")
     pe = PredictionEngine(engine=engine, local_player_id="player1")
 
-    # Two predict+tick cycles
-    pe.predict(InputState(right=True))
-    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
-    pe.predict(InputState(right=True))
-    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
-
-    # Server acknowledges tick 1 only (sequence_number=1)
-    authoritative_engine = GameEngine()
-    authoritative_engine.spawn_player("player1")
-    authoritative_engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
-    authoritative_snapshot = _make_snapshot(deepcopy(authoritative_engine.world_state))
-
-    pe.reconcile(authoritative_snapshot)
-
-    # Input 2 must have been replayed: expected = authoritative + one more right tick
-    expected_engine = GameEngine()
-    expected_engine.spawn_player("player1")
-    expected_engine.world_state = deepcopy(authoritative_engine.world_state)
-    expected_engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
-
-    expected_x = expected_engine.world_state.get_player("player1").x
-    assert engine.world_state.get_player("player1").x == pytest.approx(expected_x)
-
-
-def test_prediction_engine_acknowledge_clears_confirmed_inputs():
-    """reconcile() must remove acknowledged inputs from the buffer."""
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    pe = PredictionEngine(engine=engine, local_player_id="player1")
-
-    pe.predict(InputState(right=True))
-    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
-    pe.predict(InputState(right=True))
-    engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
-
+    for _ in range(2):
+        pe.predict(InputState(right=True))
+        engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
     assert len(pe.buffer.get_unacknowledged()) == 2
 
-    authoritative = deepcopy(engine.world_state)
-    authoritative.sequence_number = 1
-    pe.reconcile(_make_snapshot(authoritative))
+    # The host has only applied the first of the two inputs.
+    host_engine = GameEngine()
+    host_engine.spawn_player("player1")
+    host_engine.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
 
-    # Only input 2 (seq=2) remains pending
+    pe.reconcile(_make_snapshot(deepcopy(host_engine.world_state)))
+
+    expected = GameEngine()
+    expected.spawn_player("player1")
+    expected.world_state = deepcopy(host_engine.world_state)
+    expected.tick(TICK_INTERVAL, {"player1": InputState(right=True)})
+
+    assert engine.world_state.get_player("player1").x == pytest.approx(
+        expected.world_state.get_player("player1").x
+    )
     assert len(pe.buffer.get_unacknowledged()) == 1
 
 
 def test_reconcile_drops_input_history_orphaned_by_a_host_migration():
-    """A new host resumes from an older snapshot, so inputs buffered against the
-    old timeline can never be acknowledged: they must be dropped instead of
-    pinning the client a full buffer ahead of the authoritative sequence."""
+    """A new host resumes from an older sequence: inputs buffered against the
+    old timeline can never be acknowledged and must be dropped."""
     engine = GameEngine()
     engine.spawn_player("player1")
     pe = PredictionEngine(engine=engine, local_player_id="player1", history_capacity=60)

@@ -14,70 +14,44 @@ class _SpyRecoveryProber:
         return self.host_ip
 
 
-def test_attempt_recovery_with_no_metadata_returns_none_and_does_not_probe(monkeypatch):
-    controller = NodeController()
-    controller.recovery_prober = _SpyRecoveryProber(host_ip="10.0.0.1")
-
-    monkeypatch.setattr(
-        "distributed_smb.application.recovery_mixin.read_session_metadata", lambda: None
-    )
-
-    result = controller.attempt_recovery()
-
-    assert controller.lifecycle.state is NodeState.RECOVERING
-    assert result is None
-    assert controller.recovery_prober.calls == []
-
-
-def test_attempt_recovery_with_metadata_without_peers_deletes_stale_metadata(monkeypatch):
-    controller = NodeController()
-    controller.recovery_prober = _SpyRecoveryProber(host_ip=None)
-
-    metadata = SessionMetadata(session_id="session-abc", local_player_id="player-1", peers=[])
-    monkeypatch.setattr(
-        "distributed_smb.application.recovery_mixin.read_session_metadata", lambda: metadata
-    )
-
-    deleted = []
-
-    def fake_delete():
-        deleted.append(True)
-
-    monkeypatch.setattr(
-        "distributed_smb.application.recovery_mixin.delete_session_metadata", fake_delete
-    )
-
-    result = controller.attempt_recovery()
-
-    assert result is None
-    assert deleted == [True]
-    assert controller.recovery_prober.calls == []
-
-
-def test_attempt_recovery_with_failed_prober_cleans_up_and_returns_none(monkeypatch):
-    controller = NodeController()
-    controller.recovery_prober = _SpyRecoveryProber(host_ip=None)
-
-    metadata = SessionMetadata(
-        session_id="session-abc",
-        local_player_id="player-1",
-        peers=[CachedPeer(player_id="player-2", ip="127.0.0.2", join_index=1)],
-    )
-    monkeypatch.setattr(
-        "distributed_smb.application.recovery_mixin.read_session_metadata", lambda: metadata
-    )
-
-    deleted = []
+def test_recovery_gives_up_and_cleans_up_when_it_cannot_find_the_session(monkeypatch):
+    """No metadata, no peers to ask, or nobody answering: all three must leave
+    the node in RECOVERING with no stale file behind."""
+    deleted: list[bool] = []
     monkeypatch.setattr(
         "distributed_smb.application.recovery_mixin.delete_session_metadata",
         lambda: deleted.append(True),
     )
 
-    result = controller.attempt_recovery()
+    def attempt(metadata, host_ip=None):
+        controller = NodeController()
+        controller.recovery_prober = _SpyRecoveryProber(host_ip=host_ip)
+        monkeypatch.setattr(
+            "distributed_smb.application.recovery_mixin.read_session_metadata", lambda: metadata
+        )
+        return controller, controller.attempt_recovery()
 
+    controller, result = attempt(metadata=None)
     assert result is None
+    assert controller.lifecycle.state is NodeState.RECOVERING
+    assert controller.recovery_prober.calls == []  # nothing to probe
+    assert deleted == []  # no file to remove either
+
+    without_peers = SessionMetadata(session_id="session-abc", local_player_id="player-1", peers=[])
+    controller, result = attempt(metadata=without_peers)
+    assert result is None
+    assert controller.recovery_prober.calls == []
     assert deleted == [True]
-    assert controller.recovery_prober.calls
+
+    with_peers = SessionMetadata(
+        session_id="session-abc",
+        local_player_id="player-1",
+        peers=[CachedPeer(player_id="player-2", ip="127.0.0.2", join_index=1)],
+    )
+    controller, result = attempt(metadata=with_peers)
+    assert result is None
+    assert controller.recovery_prober.calls  # this time it did probe
+    assert deleted == [True, True]
 
 
 def test_attempt_recovery_success_sets_remote_host_and_session_id(monkeypatch):

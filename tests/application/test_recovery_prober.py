@@ -2,7 +2,6 @@ import socket
 import threading
 from typing import Optional
 
-from distributed_smb.application.protocols import NoopRecoveryProber, RecoveryProberProtocol
 from distributed_smb.application.recovery.prober import RecoveryProber
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.shared.messages.recovery import HostIdentityResponse
@@ -44,81 +43,56 @@ def _find_free_port() -> int:
         return sock.getsockname()[1]
 
 
-def test_recovery_prober_returns_first_responsive_host(monkeypatch):
+def _peers(*ips: str) -> list[CachedPeer]:
+    return [CachedPeer(player_id=f"p{i}", ip=ip, join_index=i) for i, ip in enumerate(ips)]
+
+
+def test_prober_returns_the_first_peer_that_answers_for_this_session(monkeypatch):
+    """Peers are probed in order, and an unreachable one must not stop the
+    search — after a migration only one of them is the new host."""
     port = _find_free_port()
     monkeypatch.setattr("distributed_smb.application.recovery.prober.HOST_UDP_PORT", port)
-
-    responder = _UdpResponder(session_id="session-abc", host_ip="10.0.0.1", bind_port=port)
-    responder.start()
-    assert responder.ready.wait(1.0)
-
-    prober = RecoveryProber()
-    peers = [
-        CachedPeer(player_id="p1", ip="127.0.0.1", join_index=0),
-        CachedPeer(player_id="p2", ip="127.0.0.2", join_index=1),
-    ]
-
-    result = prober.find_current_host("session-abc", "127.0.0.5", peers, timeout_per_peer=0.5)
-
-    assert result == "10.0.0.1"
-    responder.join(1.0)
-
-
-def test_recovery_prober_skips_first_unresponsive_peer_and_returns_second(monkeypatch):
-    port = _find_free_port()
-    monkeypatch.setattr("distributed_smb.application.recovery.prober.HOST_UDP_PORT", port)
-
     responder = _UdpResponder(session_id="session-abc", host_ip="10.0.0.2", bind_port=port)
     responder.start()
     assert responder.ready.wait(1.0)
 
     prober = RecoveryProber()
-    peers = [
-        CachedPeer(player_id="p1", ip="127.0.0.2", join_index=0),
-        CachedPeer(player_id="p2", ip="127.0.0.1", join_index=1),
-    ]
-
-    result = prober.find_current_host("session-abc", "127.0.0.5", peers, timeout_per_peer=0.5)
+    # 127.0.0.2 never answers, 127.0.0.1 does.
+    result = prober.find_current_host(
+        "session-abc", "127.0.0.5", _peers("127.0.0.2", "127.0.0.1"), timeout_per_peer=0.5
+    )
 
     assert result == "10.0.0.2"
     responder.join(1.0)
 
 
-def test_recovery_prober_returns_none_when_no_peers_respond():
-    prober = RecoveryProber()
-    peers = [CachedPeer(player_id="p1", ip="127.0.0.2", join_index=0)]
-
-    result = prober.find_current_host("session-abc", "127.0.0.5", peers, timeout_per_peer=0.1)
-
-    assert result is None
-
-
-def test_recovery_prober_ignores_mismatched_session_id(monkeypatch):
+def test_prober_gives_up_when_nobody_answers_for_this_session(monkeypatch):
+    """A silent peer and an answer about another session are both useless:
+    rejoining the wrong session would split the game in two."""
     port = _find_free_port()
     monkeypatch.setattr("distributed_smb.application.recovery.prober.HOST_UDP_PORT", port)
+    prober = RecoveryProber()
+
+    assert (
+        prober.find_current_host(
+            "session-abc", "127.0.0.5", _peers("127.0.0.2"), timeout_per_peer=0.1
+        )
+        is None
+    )
 
     responder = _UdpResponder(session_id="other-session", host_ip="10.0.0.3", bind_port=port)
     responder.start()
     assert responder.ready.wait(1.0)
-
-    prober = RecoveryProber()
-    peers = [CachedPeer(player_id="p1", ip="127.0.0.1", join_index=0)]
-
-    result = prober.find_current_host("session-abc", "127.0.0.5", peers, timeout_per_peer=0.5)
-
-    assert result is None
+    assert (
+        prober.find_current_host(
+            "session-abc", "127.0.0.5", _peers("127.0.0.1"), timeout_per_peer=0.5
+        )
+        is None
+    )
     responder.join(1.0)
 
-
-def test_recovery_prober_empty_peer_list_performs_no_io(monkeypatch):
     def fail_socket(*args, **kwargs):
-        raise AssertionError("socket.socket should not be created for empty peers")
+        raise AssertionError("no socket may be opened when there is nobody to ask")
 
     monkeypatch.setattr("distributed_smb.application.recovery.prober.socket.socket", fail_socket)
-
-    prober = RecoveryProber()
     assert prober.find_current_host("session-abc", "127.0.0.5", [], timeout_per_peer=0.1) is None
-
-
-def test_noop_recovery_prober_satisfies_protocol():
-    assert isinstance(NoopRecoveryProber(), RecoveryProberProtocol)

@@ -26,97 +26,59 @@ class FakeUdpHandler:
         return self._packets.pop(0)
 
 
-def test_host_discovery_probe_is_replied_to_with_host_identity_response():
+def _probe_packet(session_id: str) -> tuple:
+    payload = Serializer().encode_message(
+        HostDiscoveryProbe(session_id=session_id, requester_ip="127.0.0.5")
+    )
+    return payload, ("127.0.0.5", 50010)
+
+
+def test_the_host_answers_a_discovery_probe_only_for_its_own_session():
+    """A recovering node probes every cached peer: answering for a session we
+    do not host would send it into the wrong game."""
     controller = NodeController()
     controller.session_id = "session-abc"
     controller.local_ip = "10.0.0.1"
-    controller.udp_handler = FakeUdpHandler(
-        [
-            (
-                Serializer().encode_message(
-                    HostDiscoveryProbe(session_id="session-abc", requester_ip="127.0.0.5")
-                ),
-                ("127.0.0.5", 50010),
-            )
-        ]
-    )
+    controller.udp_handler = FakeUdpHandler([_probe_packet("session-abc")])
 
-    drained = controller._drain_remote_input_packets()
-
-    assert drained == 0
-    assert len(controller.udp_handler.sent) == 1
+    assert controller._drain_remote_input_packets() == 0
     payload, remote_host, remote_port = controller.udp_handler.sent[0]
-    assert remote_host == "127.0.0.5"
-    assert remote_port == 50010
-
+    assert (remote_host, remote_port) == ("127.0.0.5", 50010)
     response = controller.serializer.decode_message(payload)
     assert isinstance(response, HostIdentityResponse)
-    assert response.session_id == "session-abc"
-    assert response.host_ip == "10.0.0.1"
+    assert (response.session_id, response.host_ip) == ("session-abc", "10.0.0.1")
+
+    stranger = NodeController()
+    stranger.session_id = "session-abc"
+    stranger.local_ip = "10.0.0.1"
+    stranger.udp_handler = FakeUdpHandler([_probe_packet("other-session")])
+
+    assert stranger._drain_remote_input_packets() == 0
+    assert stranger.udp_handler.sent == []
 
 
-def test_host_discovery_probe_with_wrong_session_id_is_ignored():
+def _input_packet(player_id: str = "player2", sequence_number: int = 1) -> tuple:
+    payload = Serializer().encode_message(
+        PlayerInputPacket(
+            player_id=player_id, sequence_number=sequence_number, input_state=InputState(left=True)
+        )
+    )
+    return payload, ("127.0.0.5", 50010)
+
+
+def test_a_probe_in_the_queue_does_not_swallow_the_input_behind_it():
+    """Both arrive on the same socket, and gameplay must not lose a frame."""
     controller = NodeController()
     controller.session_id = "session-abc"
     controller.local_ip = "10.0.0.1"
-    controller.udp_handler = FakeUdpHandler(
-        [
-            (
-                Serializer().encode_message(
-                    HostDiscoveryProbe(session_id="other-session", requester_ip="127.0.0.5")
-                ),
-                ("127.0.0.5", 50010),
-            )
-        ]
-    )
+    controller.udp_handler = FakeUdpHandler([_probe_packet("session-abc"), _input_packet()])
 
-    drained = controller._drain_remote_input_packets()
+    assert controller._drain_remote_input_packets() == 1
 
-    assert drained == 0
-    assert controller.udp_handler.sent == []
-
-
-def test_host_discovery_probe_and_player_input_are_processed_in_same_cycle():
-    controller = NodeController()
-    controller.session_id = "session-abc"
-    controller.local_ip = "10.0.0.1"
-    controller.udp_handler = FakeUdpHandler(
-        [
-            (
-                Serializer().encode_message(
-                    HostDiscoveryProbe(session_id="session-abc", requester_ip="127.0.0.5")
-                ),
-                ("127.0.0.5", 50010),
-            ),
-            (
-                Serializer().encode_message(
-                    PlayerInputPacket(
-                        player_id="player2",
-                        sequence_number=1,
-                        input_state=InputState(left=True),
-                    )
-                ),
-                ("127.0.0.5", 50010),
-            ),
-        ]
-    )
-
-    drained = controller._drain_remote_input_packets()
-
-    assert drained == 1
-    assert len(controller.udp_handler.sent) == 1
-
-    payload, remote_host, remote_port = controller.udp_handler.sent[0]
-    response = controller.serializer.decode_message(payload)
-    assert isinstance(response, HostIdentityResponse)
-    assert response.host_ip == "10.0.0.1"
+    payload, _, _ = controller.udp_handler.sent[0]
+    assert isinstance(controller.serializer.decode_message(payload), HostIdentityResponse)
     assert controller.cached_remote_inputs["player2"].left is True
     assert controller.last_remote_input_sequence["player2"] == 1
-
-
-# ---------------------------------------------------------------------------
-# _check_for_rejoining_players (M9 Bug #4 fix)
-# ---------------------------------------------------------------------------
 
 
 class FakeWsHandler:
@@ -144,27 +106,13 @@ def _roster_update_with(entry: RosterEntry) -> RosterUpdate:
     return RosterUpdate(roster=roster)
 
 
-def test_check_for_rejoining_players_adds_player_to_roster_and_world():
+def test_a_rejoining_player_is_added_once_however_often_the_lobby_says_so():
+    """The lobby re-broadcasts the roster on every join, so the same entry
+    arrives repeatedly and must not be added twice."""
     controller = NodeController()
     controller.session_id = "session-abc"
     controller.local_player_id = "player2"
     new_entry = RosterEntry(player_id="player3", host="10.0.0.3", udp_port=49500, join_index=2)
-    controller.ws_handler = FakeWsHandler([_roster_update_with(new_entry)])
-
-    controller._check_for_rejoining_players()
-
-    assert controller.roster.get_player("player3") is not None
-    assert controller.engine.world_state.get_player("player3") is not None
-    assert "player3" in controller.last_input_time
-
-
-def test_check_for_rejoining_players_is_idempotent():
-    """Two RosterUpdates with the same player do not add them twice."""
-    controller = NodeController()
-    controller.session_id = "session-abc"
-    controller.local_player_id = "player2"
-    new_entry = RosterEntry(player_id="player3", host="10.0.0.3", udp_port=49500, join_index=2)
-    # Provide the same RosterUpdate twice (e.g. lobby broadcasts on each join)
     controller.ws_handler = FakeWsHandler(
         [_roster_update_with(new_entry), _roster_update_with(new_entry)]
     )
@@ -173,26 +121,14 @@ def test_check_for_rejoining_players_is_idempotent():
     controller._check_for_rejoining_players()  # must not raise RosterValidationError
 
     assert controller.roster.get_player("player3") is not None
-
-
-def test_check_for_rejoining_players_noop_when_no_new_joiners():
-    """Empty ws_handler inbox — roster stays unchanged."""
-    controller = NodeController()
-    controller.session_id = "session-abc"
-    controller.local_player_id = "player1"
-    controller.ws_handler = FakeWsHandler([])
-
-    before = len(controller.roster.get_all_players())
-    controller._check_for_rejoining_players()
-    assert len(controller.roster.get_all_players()) == before
+    assert controller.engine.world_state.get_player("player3") is not None
+    assert "player3" in controller.last_input_time
+    assert [p.player_id for p in controller.roster.get_all_players()] == ["player3"]
 
 
 def test_process_host_frame_ticks_engine_at_fixed_interval(monkeypatch):
-    """_process_host_frame() must tick the engine by TICK_INTERVAL, never by
-    the real (variable) frame dt — apply_physics() scales gravity/velocity by
-    dt, so a client replaying the same tick with a different dt than the host
-    actually used for it diverges, compounding into the large, frequent
-    reconciliation corrections observed in real testing after a migration."""
+    """Physics scales with dt, so host and client must integrate every tick by
+    the same fixed amount or the replayed positions diverge."""
     controller = NodeController()
     controller.local_player_id = "player1"
     controller.udp_handler = FakeUdpHandler([])

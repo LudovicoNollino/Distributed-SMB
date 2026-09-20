@@ -234,20 +234,6 @@ class NodeController(
         )
         return self
 
-    def build_runtime_context(self) -> dict[str, object]:
-        """Expose the components wired by the controller."""
-        context = {
-            "engine": self.engine,
-            "renderer": self.renderer,
-            "input_handler": self.input_handler,
-            "tick_interval": self.tick_interval,
-            "role": self.role,
-            "local_player_id": self.local_player_id,
-            "remote_player_id": self.remote_player_id,
-        }
-        LOGGER.info("Runtime context ready: %s", ", ".join(sorted(context)))
-        return context
-
     def process_frame(self, dt: float, local_input: InputState) -> RenderFrame:
         """Advance one frame according to the current runtime role."""
         if not self.lifecycle.is_started:

@@ -10,7 +10,8 @@ from distributed_smb.shared.session_metadata import (
 )
 
 
-def test_write_and_read_session_metadata_round_trip(tmp_path: Path) -> None:
+def test_metadata_survives_a_write_read_delete_cycle(tmp_path: Path) -> None:
+    """This file is what lets a crashed node find its session again."""
     metadata = SessionMetadata(
         session_id="session-123",
         local_player_id="player-1",
@@ -21,30 +22,21 @@ def test_write_and_read_session_metadata_round_trip(tmp_path: Path) -> None:
     )
 
     write_session_metadata(metadata, base_dir=tmp_path)
-    loaded = read_session_metadata(base_dir=tmp_path)
-
-    assert loaded == metadata
-    assert (tmp_path / "session_metadata.json").exists()
-
-
-def test_read_session_metadata_missing_file_returns_none(tmp_path: Path) -> None:
-    assert read_session_metadata(base_dir=tmp_path) is None
-
-
-def test_read_session_metadata_corrupt_file_returns_none(tmp_path: Path) -> None:
-    metadata_file = tmp_path / "session_metadata.json"
-    metadata_file.write_text("{ this is not valid json", encoding="utf-8")
-
-    assert read_session_metadata(base_dir=tmp_path) is None
-
-
-def test_delete_session_metadata_is_idempotent(tmp_path: Path) -> None:
-    metadata_file = tmp_path / "session_metadata.json"
-    metadata_file.write_text(json.dumps({"session_id": "invalid"}), encoding="utf-8")
+    assert read_session_metadata(base_dir=tmp_path) == metadata
 
     delete_session_metadata(base_dir=tmp_path)
-    assert not metadata_file.exists()
+    delete_session_metadata(base_dir=tmp_path)  # deleting twice must not raise
+    assert not (tmp_path / "session_metadata.json").exists()
 
-    # second delete should not raise
-    delete_session_metadata(base_dir=tmp_path)
-    assert not metadata_file.exists()
+
+def test_unreadable_metadata_is_treated_as_absent(tmp_path: Path) -> None:
+    """A missing or corrupt file must send the player to the menu, not crash."""
+    assert read_session_metadata(base_dir=tmp_path) is None
+
+    (tmp_path / "session_metadata.json").write_text("{ not json", encoding="utf-8")
+    assert read_session_metadata(base_dir=tmp_path) is None
+
+    (tmp_path / "session_metadata.json").write_text(
+        json.dumps({"session_id": "only-a-field"}), encoding="utf-8"
+    )
+    assert read_session_metadata(base_dir=tmp_path) is None

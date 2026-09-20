@@ -4,11 +4,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from distributed_smb.network.lobby_service import app, lobby_manager
-from distributed_smb.network.serializer import Serializer
 from distributed_smb.shared.enums import MessageType
+from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 
 client = TestClient(app)
-s = Serializer()
 
 
 @pytest.fixture(autouse=True)
@@ -18,323 +17,165 @@ def reset_lobby():
     lobby_manager.reset()
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+def _send(ws, message_type: str, **fields) -> None:
+    ws.send_text(json.dumps({"message_type": message_type, **fields}))
 
 
-def _create_msg(player_id="host1", ip="127.0.0.1", udp_port=50010):
-    return json.dumps(
-        {"message_type": "session_create", "player_id": player_id, "ip": ip, "udp_port": udp_port}
+def _next(ws) -> dict:
+    return json.loads(ws.receive_text())
+
+
+def _create_session(ws, player_id: str = "host1") -> str:
+    """Host side of the handshake: returns the session id, drops the roster echo."""
+    _send(ws, "session_create", player_id=player_id, ip="127.0.0.1", udp_port=50010)
+    session_id = _next(ws)["session_id"]
+    _next(ws)  # roster_update
+    return session_id
+
+
+def _join_session(ws, session_id: str, player_id: str = "client1", port: int = 50011) -> int:
+    """Client side of the handshake: returns the assigned join_index."""
+    _send(ws, "session_join", session_id=session_id, player_id=player_id, ip="127.0.0.1", port=port)
+    join_index = _next(ws)["join_index"]
+    _next(ws)  # roster_update
+    return join_index
+
+
+def _active_session(session_id: str = "active-1") -> None:
+    """A session already in game, as left behind by a host migration."""
+    roster = GlobalRoster()
+    roster.add_player(
+        RosterEntry(player_id="player2", host="10.0.0.2", udp_port=50010, join_index=1)
     )
+    lobby_manager.register_active_session(session_id, roster, next_join_index=2)
 
 
-def _join_msg(session_id, player_id="client1", ip="127.0.0.1", port=50011):
-    return json.dumps(
-        {
-            "message_type": "session_join",
-            "session_id": session_id,
-            "player_id": player_id,
-            "ip": ip,
-            "port": port,
-        }
-    )
+def test_the_handshake_creates_the_session_and_numbers_the_joiners():
+    """join_index is the total order the election later relies on."""
+    with client.websocket_connect("/lobby") as host_ws:
+        _send(host_ws, "session_create", player_id="host1", ip="127.0.0.1", udp_port=50010)
 
-
-def _game_start_msg(session_id):
-    return json.dumps({"message_type": "game_start", "session_id": session_id})
-
-
-# ---------------------------------------------------------------------------
-# session_create
-# ---------------------------------------------------------------------------
-
-
-def test_session_create_returns_session_created():
-    with client.websocket_connect("/lobby") as ws:
-        ws.send_text(_create_msg())
-
-        created = json.loads(ws.receive_text())
+        created = _next(host_ws)
         assert created["message_type"] == MessageType.SESSION_CREATED
-        assert "session_id" in created
+        assert created["session_id"]
         assert created["join_index"] == 0
 
-        # lobby also broadcasts roster_update to the host
-        roster_msg = json.loads(ws.receive_text())
-        assert roster_msg["message_type"] == MessageType.ROSTER_UPDATE
-        players = roster_msg["roster"]["players"]
-        assert len(players) == 1
-        assert players[0]["player_id"] == "player1"
+        players = _next(host_ws)["roster"]["players"]
+        assert [p["player_id"] for p in players] == ["player1"]
         assert players[0]["is_host"] is True
 
+        with client.websocket_connect("/lobby") as first:
+            assert _join_session(first, created["session_id"], player_id="c1") == 1
+            assert len(_next(host_ws)["roster"]["players"]) == 2
 
-# ---------------------------------------------------------------------------
-# session_join
-# ---------------------------------------------------------------------------
+            with client.websocket_connect("/lobby") as second:
+                assert _join_session(second, created["session_id"], player_id="c2", port=50012) == 2
 
 
-def test_session_join_assigns_incremental_join_index():
+def test_game_start_is_broadcast_and_marks_the_session_active():
     with client.websocket_connect("/lobby") as host_ws:
-        host_ws.send_text(_create_msg())
-        created = json.loads(host_ws.receive_text())
-        session_id = created["session_id"]
-        host_ws.receive_text()  # discard first roster_update
+        session_id = _create_session(host_ws)
 
         with client.websocket_connect("/lobby") as client_ws:
-            client_ws.send_text(_join_msg(session_id))
+            _join_session(client_ws, session_id)
+            _next(host_ws)  # roster_update caused by the join
 
-            joined = json.loads(client_ws.receive_text())
-            assert joined["message_type"] == MessageType.SESSION_JOINED
-            assert joined["join_index"] == 1
+            assert not lobby_manager.is_active(session_id)
+            _send(host_ws, "game_start", session_id=session_id)
 
-            # both connections receive roster_update
-            roster_for_client = json.loads(client_ws.receive_text())
-            roster_for_host = json.loads(host_ws.receive_text())
-
-            assert roster_for_client["message_type"] == MessageType.ROSTER_UPDATE
-            assert roster_for_host["message_type"] == MessageType.ROSTER_UPDATE
-
-            players_c = roster_for_client["roster"]["players"]
-            players_h = roster_for_host["roster"]["players"]
-            assert len(players_c) == 2
-            assert len(players_h) == 2
+            for ws in (host_ws, client_ws):
+                assert _next(ws)["message_type"] == MessageType.GAME_START
+            assert lobby_manager.is_active(session_id)
 
 
-def test_second_join_gets_join_index_2():
+def test_a_recreated_session_keeps_its_id_and_lets_a_node_rejoin_mid_game():
+    """A crashed node comes back with its cached id and must land straight
+    in the running game, without waiting for a start that already happened."""
     with client.websocket_connect("/lobby") as host_ws:
-        host_ws.send_text(_create_msg())
-        created = json.loads(host_ws.receive_text())
-        session_id = created["session_id"]
-        host_ws.receive_text()  # discard roster
-
-        with client.websocket_connect("/lobby") as c1_ws:
-            c1_ws.send_text(_join_msg(session_id, player_id="c1", port=50011))
-            joined1 = json.loads(c1_ws.receive_text())
-            assert joined1["join_index"] == 1
-            # consume roster broadcasts
-            c1_ws.receive_text()
-            host_ws.receive_text()
-
-            with client.websocket_connect("/lobby") as c2_ws:
-                c2_ws.send_text(_join_msg(session_id, player_id="c2", port=50012))
-                joined2 = json.loads(c2_ws.receive_text())
-                assert joined2["join_index"] == 2
-
-
-# ---------------------------------------------------------------------------
-# game_start
-# ---------------------------------------------------------------------------
-
-
-def test_game_start_broadcast_to_all():
-    with client.websocket_connect("/lobby") as host_ws:
-        host_ws.send_text(_create_msg())
-        created = json.loads(host_ws.receive_text())
-        session_id = created["session_id"]
-        host_ws.receive_text()  # discard roster
-
-        with client.websocket_connect("/lobby") as client_ws:
-            client_ws.send_text(_join_msg(session_id))
-            client_ws.receive_text()  # joined
-            client_ws.receive_text()  # roster
-            host_ws.receive_text()  # roster
-
-            host_ws.send_text(_game_start_msg(session_id))
-
-            start_for_host = json.loads(host_ws.receive_text())
-            start_for_client = json.loads(client_ws.receive_text())
-
-            assert start_for_host["message_type"] == MessageType.GAME_START
-            assert start_for_client["message_type"] == MessageType.GAME_START
-            assert start_for_host["session_id"] == session_id
-
-
-def test_game_start_marks_session_active():
-    with client.websocket_connect("/lobby") as host_ws:
-        host_ws.send_text(_create_msg())
-        created = json.loads(host_ws.receive_text())
-        session_id = created["session_id"]
-        host_ws.receive_text()  # discard roster
-
-        assert not lobby_manager.is_active(session_id)
-        host_ws.send_text(_game_start_msg(session_id))
-        host_ws.receive_text()  # consume broadcast
-        assert lobby_manager.is_active(session_id)
-
-
-# ---------------------------------------------------------------------------
-# register_active_session (M9 rejoin)
-# ---------------------------------------------------------------------------
-
-
-def test_register_active_session_creates_active_session():
-    from distributed_smb.shared.roster import GlobalRoster, RosterEntry
-
-    roster = GlobalRoster()
-    roster.add_player(
-        RosterEntry(player_id="player2", host="10.0.0.2", udp_port=50010, join_index=1)
-    )
-    lobby_manager.register_active_session("abc123", roster, next_join_index=2)
-
-    assert lobby_manager.is_active("abc123")
-
-
-def test_session_join_for_active_session_sends_game_start_immediately():
-    """Rejoining node must receive GameStart right after SessionJoined (M9 fix #3)."""
-    from distributed_smb.shared.roster import GlobalRoster, RosterEntry
-
-    roster = GlobalRoster()
-    roster.add_player(
-        RosterEntry(player_id="player2", host="10.0.0.2", udp_port=50010, join_index=1)
-    )
-    lobby_manager.register_active_session("abc123", roster, next_join_index=2)
-
-    with client.websocket_connect("/lobby") as rejoining_ws:
-        rejoining_ws.send_text(
-            json.dumps(
-                {
-                    "message_type": "session_join",
-                    "session_id": "abc123",
-                    "player_id": "player3",
-                    "ip": "10.0.0.3",
-                    "port": 49500,
-                }
-            )
+        _send(
+            host_ws,
+            "session_recreate",
+            session_id="restored-session-abc",
+            next_join_index=2,
+            host_ip="192.168.1.10",
+            host_udp_port=50010,
+            host_join_index=1,
         )
 
-        # 1) SessionJoined with new join_index
-        joined = json.loads(rejoining_ws.receive_text())
-        assert joined["message_type"] == MessageType.SESSION_JOINED
-        assert joined["join_index"] == 2
-
-        # 2) RosterUpdate broadcast
-        roster_msg = json.loads(rejoining_ws.receive_text())
-        assert roster_msg["message_type"] == MessageType.ROSTER_UPDATE
-
-        # 3) GameStart sent immediately because session is active
-        game_start = json.loads(rejoining_ws.receive_text())
-        assert game_start["message_type"] == MessageType.GAME_START
-        assert game_start["session_id"] == "abc123"
-
-
-def test_session_recreate_registers_session_and_sends_created_ack():
-    """SESSION_RECREATE creates an active session with the preserved session_id (M9)."""
-    with client.websocket_connect("/lobby") as host_ws:
-        host_ws.send_text(
-            json.dumps(
-                {
-                    "message_type": "session_recreate",
-                    "session_id": "restored-session-abc",
-                    "next_join_index": 2,
-                    "host_ip": "192.168.1.10",
-                    "host_udp_port": 50010,
-                    "host_join_index": 1,
-                }
-            )
-        )
-
-        ack = json.loads(host_ws.receive_text())
+        ack = _next(host_ws)
         assert ack["message_type"] == MessageType.SESSION_CREATED
         assert ack["session_id"] == "restored-session-abc"
-        assert lobby_manager.is_active("restored-session-abc")
-        roster = lobby_manager.get_roster("restored-session-abc")
-        host_entry = next((e for e in roster.get_all_players() if e.is_host), None)
-        assert host_entry is not None
-        assert host_entry.host == "192.168.1.10"
-        assert host_entry.join_index == 1
+
+        host_entry = lobby_manager.get_roster("restored-session-abc").get_host()
+        assert (host_entry.host, host_entry.join_index) == ("192.168.1.10", 1)
+
+        with client.websocket_connect("/lobby") as rejoining:
+            assert (
+                _join_session(rejoining, "restored-session-abc", player_id="player3", port=49500)
+                == 2
+            )
+
+            game_start = _next(rejoining)
+            assert game_start["message_type"] == MessageType.GAME_START
+            assert game_start["session_id"] == "restored-session-abc"
 
 
-def _leave_msg(session_id, join_index):
-    return json.dumps(
-        {
-            "message_type": "session_leave",
-            "session_id": session_id,
-            "join_index": join_index,
-        }
-    )
-
-
-def test_client_leaving_the_lobby_is_removed_from_the_roster():
-    """A client that announces its departure must disappear from the roster of
-    everyone still in the lobby."""
+def test_a_client_that_leaves_disappears_from_everyone_else_roster():
+    """Also once the game has started: the post-victory lobby runs on a
+    session already marked active."""
     with client.websocket_connect("/lobby") as host_ws:
-        host_ws.send_text(_create_msg())
-        session_id = json.loads(host_ws.receive_text())["session_id"]
-        host_ws.receive_text()  # first roster_update
+        session_id = _create_session(host_ws)
 
         with client.websocket_connect("/lobby") as client_ws:
-            client_ws.send_text(_join_msg(session_id))
-            joined = json.loads(client_ws.receive_text())
-            client_ws.receive_text()  # roster_update
-            assert len(json.loads(host_ws.receive_text())["roster"]["players"]) == 2
+            join_index = _join_session(client_ws, session_id)
+            assert len(_next(host_ws)["roster"]["players"]) == 2
 
-            client_ws.send_text(_leave_msg(session_id, joined["join_index"]))
-            roster = json.loads(host_ws.receive_text())
-            client_ws.receive_text()  # the leaver gets the broadcast too
+            _send(client_ws, "session_leave", session_id=session_id, join_index=join_index)
+            roster = _next(host_ws)
+            _next(client_ws)  # the leaver gets the broadcast too
 
     assert roster["message_type"] == MessageType.ROSTER_UPDATE
     assert [p["player_id"] for p in roster["roster"]["players"]] == ["player1"]
 
+    _active_session()
+    with client.websocket_connect("/lobby") as ws:
+        join_index = _join_session(ws, "active-1", player_id="player3", port=49500)
+        _next(ws)  # game_start
 
-def test_host_leaving_the_lobby_closes_the_room():
-    """The room has no meaning without its host: the others get SessionClosed
-    (they return to the menu) and the session is dropped entirely."""
+        _send(ws, "session_leave", session_id="active-1", join_index=join_index)
+        roster = _next(ws)
+
+    assert [p["player_id"] for p in roster["roster"]["players"]] == ["player2"]
+
+
+def test_the_host_leaving_closes_the_room_for_everyone():
+    """The room has no meaning without its host: the others are sent back to
+    the menu and the session is dropped entirely."""
     with client.websocket_connect("/lobby") as host_ws:
-        host_ws.send_text(_create_msg())
-        session_id = json.loads(host_ws.receive_text())["session_id"]
-        host_ws.receive_text()
+        session_id = _create_session(host_ws)
 
         with client.websocket_connect("/lobby") as client_ws:
-            client_ws.send_text(_join_msg(session_id))
-            client_ws.receive_text()  # session_joined
-            client_ws.receive_text()  # roster_update
-            host_ws.receive_text()  # roster_update
+            _join_session(client_ws, session_id)
+            _next(host_ws)  # roster_update caused by the join
 
-            host_ws.send_text(_leave_msg(session_id, 0))
-            closed = json.loads(client_ws.receive_text())
-            host_ws.receive_text()  # the host gets its own broadcast too
+            _send(host_ws, "session_leave", session_id=session_id, join_index=0)
+            closed = _next(client_ws)
+            _next(host_ws)  # the host gets its own broadcast too
 
     assert closed["message_type"] == MessageType.SESSION_CLOSED
     assert closed["session_id"] == session_id
-    assert not lobby_manager.is_active(session_id)
-
-
-def test_leaving_works_after_the_game_has_started():
-    """The post-victory lobby runs on a session already marked active — an
-    explicit leave must still update the roster there."""
-    from distributed_smb.shared.roster import GlobalRoster, RosterEntry
-
-    roster = GlobalRoster()
-    roster.add_player(
-        RosterEntry(player_id="player2", host="10.0.0.2", udp_port=50010, join_index=1)
-    )
-    lobby_manager.register_active_session("active-1", roster, next_join_index=2)
-
-    with client.websocket_connect("/lobby") as ws:
-        ws.send_text(_join_msg("active-1", player_id="player3", port=49500))
-        joined = json.loads(ws.receive_text())
-        ws.receive_text()  # roster_update
-        ws.receive_text()  # game_start
-
-        ws.send_text(_leave_msg("active-1", joined["join_index"]))
-        roster_msg = json.loads(ws.receive_text())
-
-    assert [p["player_id"] for p in roster_msg["roster"]["players"]] == ["player2"]
+    assert not lobby_manager.has_session(session_id)
 
 
 def test_a_dropped_connection_does_not_evict_anyone():
     """A socket dying is not a departure: it also happens on a crash or during
     a host migration, where membership belongs to the host."""
     with client.websocket_connect("/lobby") as host_ws:
-        host_ws.send_text(_create_msg())
-        session_id = json.loads(host_ws.receive_text())["session_id"]
-        host_ws.receive_text()
+        session_id = _create_session(host_ws)
 
         with client.websocket_connect("/lobby") as client_ws:
-            client_ws.send_text(_join_msg(session_id))
-            client_ws.receive_text()
-            client_ws.receive_text()
-            host_ws.receive_text()
+            _join_session(client_ws, session_id)
+            _next(host_ws)  # roster_update caused by the join
 
     players = {e.player_id for e in lobby_manager.get_roster(session_id).get_all_players()}
     assert players == {"player1", "player2"}

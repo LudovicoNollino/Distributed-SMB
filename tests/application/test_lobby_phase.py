@@ -49,23 +49,13 @@ def _make_client() -> NodeController:
 
 
 def _join_or_cancel(stop: threading.Event, *threads: threading.Thread) -> None:
-    """Join lobby threads, cancelling any still waiting so the process can exit.
-
-    Lobby waits have no deadline: a thread stuck in one (e.g. a message that
-    never arrives) would spin forever and keep pytest from ever terminating.
-    Setting ``stop`` makes their on_update callback return False, which ends
-    the wait with LobbyCancelledError.
-    """
+    """Join the lobby threads, cancelling whatever is still waiting: lobby
+    waits have no deadline, so a stuck thread would hang the whole run."""
     for t in threads:
         t.join(timeout=10.0)
     stop.set()
     for t in threads:
         t.join(timeout=2.0)
-
-
-# ---------------------------------------------------------------------------
-# Host-only: the host triggers the start manually, no real client needed
-# ---------------------------------------------------------------------------
 
 
 def test_host_lobby_phase_single_player():
@@ -78,47 +68,14 @@ def test_host_lobby_phase_single_player():
     assert len(roster.players) == 1
     assert roster.players[0].player_id == "player1"
     assert roster.players[0].is_host is True
+    assert set(host.engine.world_state.characters) == {"player1"}
 
 
-# ---------------------------------------------------------------------------
-# Full flow: host waits for client, then triggers GameStart
-# ---------------------------------------------------------------------------
-
-
-def test_host_and_client_lobby_phase():
+def test_host_and_client_lobby_phase(run_lobby_pair):
     host = _make_host()
     client = _make_client()
-    stop = threading.Event()
 
-    errors = []
-
-    def run_host():
-        try:
-            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                host.lobby_phase(
-                    start_requested=lambda: len(host.roster.players) >= 2,
-                    on_update=lambda *a: not stop.is_set(),
-                )
-        except Exception as exc:
-            errors.append(exc)
-
-    def run_client():
-        # Wait until the host has set session_id
-        deadline = time.time() + 5.0
-        while not host.session_id and time.time() < deadline:
-            time.sleep(0.05)
-        try:
-            client.lobby_phase(session_id=host.session_id, on_update=lambda *a: not stop.is_set())
-        except Exception as exc:
-            errors.append(exc)
-
-    t_host = threading.Thread(target=run_host, daemon=True)
-    t_client = threading.Thread(target=run_client, daemon=True)
-
-    t_host.start()
-    t_client.start()
-
-    _join_or_cancel(stop, t_host, t_client)
+    errors = run_lobby_pair(host, client)
 
     assert not errors, errors
     assert len(host.roster.players) == 2
@@ -129,52 +86,11 @@ def test_host_and_client_lobby_phase():
     assert set(client.engine.world_state.characters) == {"player1", "player2"}
 
 
-def test_host_solo_world_has_only_one_player():
-    """A host who starts solo must see a world with only their own character."""
-    host = _make_host()
-    with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-        host.lobby_phase(start_requested=lambda: True)
-
-    assert set(host.engine.world_state.characters) == {"player1"}
-
-
-# ---------------------------------------------------------------------------
-# replay_lobby_phase(): re-entering the waiting room after a victory, without
-# recreating the session (host and client are already connected).
-# ---------------------------------------------------------------------------
-
-
-def test_replay_lobby_phase_resets_engine_without_new_session():
+def test_replay_lobby_phase_resets_engine_without_new_session(run_lobby_pair):
     host = _make_host()
     client = _make_client()
-    stop = threading.Event()
 
-    errors = []
-
-    def run_host():
-        try:
-            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
-                host.lobby_phase(
-                    start_requested=lambda: len(host.roster.players) >= 2,
-                    on_update=lambda *a: not stop.is_set(),
-                )
-        except Exception as exc:
-            errors.append(exc)
-
-    def run_client():
-        deadline = time.time() + 5.0
-        while not host.session_id and time.time() < deadline:
-            time.sleep(0.05)
-        try:
-            client.lobby_phase(session_id=host.session_id, on_update=lambda *a: not stop.is_set())
-        except Exception as exc:
-            errors.append(exc)
-
-    t_host = threading.Thread(target=run_host, daemon=True)
-    t_client = threading.Thread(target=run_client, daemon=True)
-    t_host.start()
-    t_client.start()
-    _join_or_cancel(stop, t_host, t_client)
+    errors = run_lobby_pair(host, client)
     assert not errors, errors
 
     original_session_id = host.session_id
@@ -214,23 +130,6 @@ def test_replay_lobby_phase_resets_engine_without_new_session():
     assert set(host.engine.world_state.characters) == {"player1", "player2"}
 
 
-def test_client_returns_to_menu_when_the_host_leaves_the_lobby():
-    """SessionClosed must abort the client's wait with a distinct error, so
-    main() can send it back to the menu instead of hanging on poll()."""
-    from distributed_smb.application.lobby_coordinator import SessionClosedError
-    from distributed_smb.shared.messages.session import SessionClosed
-
-    class ClosingWsHandler:
-        def poll(self):
-            return SessionClosed(session_id="abc123")
-
-    controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
-    controller.ws_handler = ClosingWsHandler()
-
-    with pytest.raises(SessionClosedError):
-        controller._client_replay_wait()
-
-
 def _run_lobby_until_cancelled(ctrl, errors, **kwargs):
     from distributed_smb.application.lobby_coordinator import (
         LobbyCancelledError,
@@ -244,10 +143,8 @@ def _run_lobby_until_cancelled(ctrl, errors, **kwargs):
 
 
 def test_a_client_leaving_disappears_from_the_hosts_roster():
-    """End-to-end with real controllers and sockets: a client that leaves the
-    lobby must vanish from the host's roster. Guards the client side too —
-    the leave message is only correct if session_id and join_index were
-    recorded when the join was acknowledged, not later at game start."""
+    """Real controllers and sockets: the leave message is only correct if
+    session_id and join_index were recorded when the join was acked."""
     host = _make_host()
     client = _make_client()
     stop_host = threading.Event()

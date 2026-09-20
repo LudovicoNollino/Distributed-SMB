@@ -24,7 +24,6 @@ class NodeState(StrEnum):
     IDLE = "idle"
     IN_LOBBY = "in_lobby"
     IN_GAME = "in_game"
-    ELECTION = "election"
     RECOVERING = "recovering"
 
 

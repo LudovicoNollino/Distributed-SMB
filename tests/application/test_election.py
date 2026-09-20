@@ -1,9 +1,4 @@
-"""Unit tests for failure detection and host election algorithms.
-
-Tests cover:
-- HostTimeoutWatcher: timeout-based failure detection
-- ElectionCoordinator: staggered timer election with deterministic ordering
-"""
+"""Failure detector and leader election, without any networking."""
 
 import time
 
@@ -22,214 +17,117 @@ from distributed_smb.shared.config import (
 )
 
 
-class TestHostTimeoutWatcher:
-    """HostTimeoutWatcher: eventually perfect failure detector via timeout."""
+def test_the_watcher_only_fires_past_the_interval_and_any_snapshot_clears_it():
+    watcher = HostTimeoutWatcher(timeout_s=5.0)
+    t0 = time.time()
 
-    def test_no_timeout_before_first_snapshot(self):
-        """Watcher returns False until first snapshot received."""
-        watcher = HostTimeoutWatcher(timeout_s=5.0)
-        current_time = time.time()
-        assert watcher.tick(current_time) is False
+    assert watcher.tick(t0) is False  # nothing received yet
 
-    def test_no_timeout_within_interval(self):
-        """Watcher returns False while snapshot is recent."""
-        watcher = HostTimeoutWatcher(timeout_s=5.0)
-        t0 = time.time()
-        watcher.reset(t0)
-        # Within timeout interval
-        assert watcher.tick(t0 + 2.0) is False
-        assert watcher.tick(t0 + 4.9) is False
+    watcher.reset(t0)
+    assert watcher.tick(t0 + 2.0) is False
+    assert watcher.tick(t0 + 5.0) is False  # exactly at the boundary
+    assert watcher.tick(t0 + 5.001) is True
 
-    def test_timeout_after_interval(self):
-        """Watcher returns True once timeout_s exceeded."""
-        watcher = HostTimeoutWatcher(timeout_s=5.0)
-        t0 = time.time()
-        watcher.reset(t0)
-        # Just at boundary
-        assert watcher.tick(t0 + 5.0) is False
-        # Just past boundary
-        assert watcher.tick(t0 + 5.001) is True
-
-    def test_reset_clears_timeout(self):
-        """Watcher resets on new snapshot."""
-        watcher = HostTimeoutWatcher(timeout_s=5.0)
-        t0 = time.time()
-        watcher.reset(t0)
-        # Time advances, snapshot times out
-        assert watcher.tick(t0 + 5.5) is True
-        # Reset with new snapshot
-        watcher.reset(t0 + 5.5)
-        # Now within new interval
-        assert watcher.tick(t0 + 8.0) is False
+    watcher.reset(t0 + 5.5)  # a snapshot finally arrived
+    assert watcher.tick(t0 + 8.0) is False
 
 
-class TestElectionCoordinatorBasics:
-    """ElectionCoordinator: deterministic election via JoinIndex ordering."""
+def test_start_election_transitions_from_idle_to_pending():
+    coordinator = ElectionCoordinator(
+        join_index=0,
+        my_ip="127.0.0.1",
+        timeout_base_s=T_ELECTION_BASE_S,
+        timeout_delta_s=T_ELECTION_DELTA_S,
+    )
+    assert coordinator.state == ElectionState.IDLE
 
-    def test_initial_state_is_idle(self):
-        """Coordinator starts in IDLE state."""
-        coordinator = ElectionCoordinator(
-            join_index=0,
-            my_ip="127.0.0.1",
-            timeout_base_s=T_ELECTION_BASE_S,
-            timeout_delta_s=T_ELECTION_DELTA_S,
-        )
-        assert coordinator.state == ElectionState.IDLE
+    coordinator.start_election({"127.0.0.2", "127.0.0.3"})
 
-    def test_start_election_transitions_to_pending(self):
-        """start_election() moves to ELECTION_PENDING."""
-        coordinator = ElectionCoordinator(
-            join_index=0,
-            my_ip="127.0.0.1",
-            timeout_base_s=T_ELECTION_BASE_S,
-            timeout_delta_s=T_ELECTION_DELTA_S,
-        )
-        coordinator.start_election({"127.0.0.2", "127.0.0.3"})
-        assert coordinator.state == ElectionState.ELECTION_PENDING
-        assert coordinator.known_peers == {"127.0.0.2", "127.0.0.3"}
+    assert coordinator.state == ElectionState.ELECTION_PENDING
+    assert coordinator.known_peers == {"127.0.0.2", "127.0.0.3"}
 
-    def test_election_timer_calculation(self):
-        """set_election_timer() calculates T = T_BASE + join_index * T_DELTA."""
-        coordinator = ElectionCoordinator(
-            join_index=2,
-            my_ip="127.0.0.1",
-            timeout_base_s=0.5,
-            timeout_delta_s=0.3,
-        )
-        t0 = 1000.0
-        coordinator.start_election(set())
+
+def test_the_staggered_timer_fires_after_base_plus_join_index_delta():
+    coordinator = ElectionCoordinator(
+        join_index=2, my_ip="192.168.1.1", timeout_base_s=0.5, timeout_delta_s=0.3
+    )
+    t0 = 1000.0
+    coordinator.start_election(set())
+    coordinator.set_election_timer(t0)
+
+    assert coordinator.election_timer_expiry == pytest.approx(t0 + 1.1)
+    assert coordinator.tick(t0 + 1.0) is None
+
+    event = coordinator.tick(t0 + 1.1)
+
+    assert isinstance(event, SelfElected)
+    assert event.my_ip == "192.168.1.1"
+    assert coordinator.state == ElectionState.CLAIMED
+
+
+def test_lower_join_index_wins():
+    """Both survivors start at the same instant: only the lower index
+    self-elects, the other is still waiting when it does."""
+    first = ElectionCoordinator(
+        join_index=0, my_ip="10.0.0.1", timeout_base_s=0.5, timeout_delta_s=0.3
+    )
+    second = ElectionCoordinator(
+        join_index=1, my_ip="10.0.0.2", timeout_base_s=0.5, timeout_delta_s=0.3
+    )
+    t0 = 1000.0
+    for coordinator, peer_ip in ((first, "10.0.0.2"), (second, "10.0.0.1")):
+        coordinator.start_election({peer_ip})
         coordinator.set_election_timer(t0)
-        # T = 0.5 + 2 * 0.3 = 1.1
-        expected_expiry = t0 + 1.1
-        assert coordinator.election_timer_expiry == pytest.approx(expected_expiry)
 
-    def test_tick_self_elected_when_timer_fires(self):
-        """tick() returns SelfElected when timer expires in ELECTION_PENDING."""
-        coordinator = ElectionCoordinator(
-            join_index=0,
-            my_ip="192.168.1.1",
-            timeout_base_s=0.5,
-            timeout_delta_s=0.3,
-        )
-        t0 = 1000.0
-        coordinator.start_election(set())
-        coordinator.set_election_timer(t0)
-        # Timer not yet expired
-        event = coordinator.tick(t0 + 0.49)
-        assert event is None
-        # Timer fired
-        event = coordinator.tick(t0 + 0.5)
-        assert isinstance(event, SelfElected)
-        assert event.my_ip == "192.168.1.1"
-        assert coordinator.state == ElectionState.CLAIMED
-
-    def test_lower_join_index_wins(self):
-        """Node with lower JoinIndex wins election (deterministic ordering)."""
-        # Node A: join_index=0
-        a = ElectionCoordinator(
-            join_index=0, my_ip="10.0.0.1", timeout_base_s=0.5, timeout_delta_s=0.3
-        )
-        # Node B: join_index=1
-        b = ElectionCoordinator(
-            join_index=1, my_ip="10.0.0.2", timeout_base_s=0.5, timeout_delta_s=0.3
-        )
-        # Both start election at same time
-        t0 = 1000.0
-        a.start_election({"10.0.0.2"})
-        a.set_election_timer(t0)
-        b.start_election({"10.0.0.1"})
-        b.set_election_timer(t0)
-        # A's timer: 0.5 + 0 * 0.3 = 0.5
-        # B's timer: 0.5 + 1 * 0.3 = 0.8
-        # A fires first
-        event_a = a.tick(t0 + 0.5)
-        assert isinstance(event_a, SelfElected)
-        assert a.state == ElectionState.CLAIMED
-        # B fires later
-        event_b = b.tick(t0 + 0.5)
-        assert event_b is None
-        assert b.state == ElectionState.ELECTION_PENDING
+    # first fires at 0.5, second only at 0.8
+    assert isinstance(first.tick(t0 + 0.5), SelfElected)
+    assert first.state == ElectionState.CLAIMED
+    assert second.tick(t0 + 0.5) is None
+    assert second.state == ElectionState.ELECTION_PENDING
 
 
-class TestElectionCoordinatorClaiming:
-    """ElectionCoordinator: handling NewHostClaim messages."""
-
-    def test_accept_claim_from_lower_join_index(self):
-        """Node accepts NewHostClaim from lower-indexed peer."""
-        # Node at join_index=2 receives claim from join_index=0
-        node = ElectionCoordinator(
-            join_index=2,
-            my_ip="10.0.0.3",
-            timeout_base_s=0.5,
-            timeout_delta_s=0.3,
-        )
-        node.start_election({"10.0.0.1", "10.0.0.2"})
-        event = node.on_new_host_claim(claimer_join_index=0, claimer_ip="10.0.0.1")
-        assert isinstance(event, FollowingHost)
-        assert event.claimer_ip == "10.0.0.1"
-        assert event.claimer_join_index == 0
-        assert node.state == ElectionState.FOLLOWER
-        assert node.current_host_ip == "10.0.0.1"
-
-    def test_reject_claim_from_higher_join_index(self):
-        """Node rejects NewHostClaim from higher-indexed peer (we are rightful host)."""
-        # Node at join_index=1 receives claim from join_index=2
-        node = ElectionCoordinator(
-            join_index=1,
-            my_ip="10.0.0.2",
-            timeout_base_s=0.5,
-            timeout_delta_s=0.3,
-        )
-        node.state = ElectionState.CLAIMED
-        event = node.on_new_host_claim(claimer_join_index=2, claimer_ip="10.0.0.3")
-        assert event is None
-        assert node.state == ElectionState.CLAIMED  # No state change
-
-    def test_claim_overrides_claimed_state(self):
-        """Node transitions from CLAIMED to FOLLOWER if better candidate appears."""
-        node = ElectionCoordinator(
-            join_index=1,
-            my_ip="10.0.0.2",
-            timeout_base_s=0.5,
-            timeout_delta_s=0.3,
-        )
-        node.state = ElectionState.CLAIMED
-        node.current_host_join_index = 1
-        # Better candidate (join_index=0) arrives
-        event = node.on_new_host_claim(claimer_join_index=0, claimer_ip="10.0.0.1")
-        assert isinstance(event, FollowingHost)
-        assert node.state == ElectionState.FOLLOWER
-        assert node.current_host_ip == "10.0.0.1"
+def _node(join_index: int, my_ip: str) -> ElectionCoordinator:
+    return ElectionCoordinator(
+        join_index=join_index, my_ip=my_ip, timeout_base_s=0.5, timeout_delta_s=0.3
+    )
 
 
-class TestElectionCoordinatorCascade:
-    """ElectionCoordinator: cascading fallback on host failure."""
+def test_a_claim_wins_only_if_it_comes_from_a_lower_join_index():
+    """Lower index wins, even against a node that already claimed: that is
+    what keeps two survivors from both believing they are the host."""
+    follower = _node(join_index=2, my_ip="10.0.0.3")
+    follower.start_election({"10.0.0.1", "10.0.0.2"})
+
+    event = follower.on_new_host_claim(claimer_join_index=0, claimer_ip="10.0.0.1")
+    assert isinstance(event, FollowingHost)
+    assert (event.claimer_ip, event.claimer_join_index) == ("10.0.0.1", 0)
+    assert follower.state == ElectionState.FOLLOWER
+    assert follower.current_host_ip == "10.0.0.1"
+
+    claimer = _node(join_index=1, my_ip="10.0.0.2")
+    claimer.state = ElectionState.CLAIMED
+    claimer.current_host_join_index = 1
+
+    assert claimer.on_new_host_claim(claimer_join_index=2, claimer_ip="10.0.0.3") is None
+    assert claimer.state == ElectionState.CLAIMED
+
+    event = claimer.on_new_host_claim(claimer_join_index=0, claimer_ip="10.0.0.1")
+    assert isinstance(event, FollowingHost)
+    assert claimer.state == ElectionState.FOLLOWER
+    assert claimer.current_host_ip == "10.0.0.1"
 
 
-class TestElectionCoordinatorNoDoublElection:
-    """ElectionCoordinator: prevent double elections and race conditions."""
+def test_a_claim_arriving_before_our_timer_prevents_a_second_election():
+    """Without this, the slower candidate would self-elect anyway and the
+    session would end up with two hosts."""
+    coordinator = _node(join_index=1, my_ip="10.0.0.2")
+    t0 = 1000.0
+    coordinator.start_election({"10.0.0.1"})
+    coordinator.set_election_timer(t0)
 
-    def test_no_election_double_when_claim_received_early(self):
-        """Receiving valid claim before timer fires prevents self-election."""
-        coordinator = ElectionCoordinator(
-            join_index=1,
-            my_ip="10.0.0.2",
-            timeout_base_s=0.5,
-            timeout_delta_s=0.3,
-        )
-        t0 = 1000.0
-        coordinator.start_election({"10.0.0.1"})
-        coordinator.set_election_timer(t0)
-        # Claim arrives from lower-indexed node BEFORE timer fires
-        event = coordinator.on_new_host_claim(claimer_join_index=0, claimer_ip="10.0.0.1")
-        assert isinstance(event, FollowingHost)
-        assert coordinator.state == ElectionState.FOLLOWER
-        # Timer still hasn't fired, but we're already in FOLLOWER state
-        # Tick past the timer expiry time, should return None (no state change)
-        event = coordinator.tick(t0 + 0.8)
-        assert event is None
-        assert coordinator.state == ElectionState.FOLLOWER
+    event = coordinator.on_new_host_claim(claimer_join_index=0, claimer_ip="10.0.0.1")
+    assert isinstance(event, FollowingHost)
+    assert coordinator.state == ElectionState.FOLLOWER
 
-
-class TestElectionCoordinatorStateInfo:
-    """ElectionCoordinator: debugging and introspection."""
+    assert coordinator.tick(t0 + 0.8) is None  # past our own expiry
+    assert coordinator.state == ElectionState.FOLLOWER

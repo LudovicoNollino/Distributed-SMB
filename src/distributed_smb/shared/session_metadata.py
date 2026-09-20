@@ -22,18 +22,18 @@ class SessionMetadata:
     peers: list[CachedPeer]
 
 
-def _session_metadata_path(base_dir: Path | str = Path.cwd()) -> Path:
-    return Path(base_dir) / SESSION_METADATA_FILENAME
+def _session_metadata_path(base_dir: Path | str | None = None) -> Path:
+    return Path(Path.cwd() if base_dir is None else base_dir) / SESSION_METADATA_FILENAME
 
 
-def write_session_metadata(metadata: SessionMetadata, base_dir: Path | str = Path.cwd()) -> None:
+def write_session_metadata(metadata: SessionMetadata, base_dir: Path | str | None = None) -> None:
     session_metadata_path = _session_metadata_path(base_dir)
     session_metadata_path.parent.mkdir(parents=True, exist_ok=True)
     with session_metadata_path.open("w", encoding="utf-8") as handle:
         json.dump(asdict(metadata), handle)
 
 
-def read_session_metadata(base_dir: Path | str = Path.cwd()) -> Optional[SessionMetadata]:
+def read_session_metadata(base_dir: Path | str | None = None) -> Optional[SessionMetadata]:
     session_metadata_path = _session_metadata_path(base_dir)
     if not session_metadata_path.exists():
         return None
@@ -77,7 +77,7 @@ def read_session_metadata(base_dir: Path | str = Path.cwd()) -> Optional[Session
         return None
 
 
-def delete_session_metadata(base_dir: Path | str = Path.cwd()) -> None:
+def delete_session_metadata(base_dir: Path | str | None = None) -> None:
     session_metadata_path = _session_metadata_path(base_dir)
     try:
         session_metadata_path.unlink()

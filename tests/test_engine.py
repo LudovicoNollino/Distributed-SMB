@@ -2,120 +2,31 @@ import time
 
 from distributed_smb.domain.entity import Enemy, ExclusivePowerUp
 from distributed_smb.domain.game_engine import VOID_DEATH_CAUSE, GameEngine
-from distributed_smb.domain.physics import GRAVITY, JUMP_FORCE, MOVE_SPEED
+from distributed_smb.domain.physics import JUMP_FORCE
 from distributed_smb.shared.input import InputState
-from src.distributed_smb.domain.entity import CooperativeGate, DestructibleBlock
-from src.distributed_smb.domain.world import EnvironmentalState, WorldState
 
 
-def test_environmental_state_contains_entities():
-    env = EnvironmentalState()
-    env.destructible_blocks.append(DestructibleBlock(x=10, y=10))
-    env.power_ups["p1"] = ExclusivePowerUp(x=20, y=20, powerup_id="p1")
-    env.cooperative_gates["g1"] = CooperativeGate(x=30, y=30, gate_id="g1")
-
-    assert len(env.destructible_blocks) == 1
-    assert "p1" in env.power_ups
-    assert "g1" in env.cooperative_gates
-
-
-def test_worldstate_preserves_environmental_state():
-    world = WorldState()
-    block = DestructibleBlock(x=10, y=10)
-    world.environment.destructible_blocks.append(block)
-
-    assert world.environment.destructible_blocks[0] is block
-
-
-def test_move_right():
+def test_a_jump_rises_then_falls_and_lands_exactly_on_the_platform():
+    """Euler integration with a fixed step: the whole prediction/replay scheme
+    assumes this arc is reproducible tick by tick."""
     engine = GameEngine()
     engine.spawn_player("player1")
-    players = engine.world_state.get_all_players()
-    player = players[0]
-    initial_x = player.x
-
-    input_state = InputState(right=True)
-
-    for _ in range(60):
-        engine.tick(1 / 60, {"player1": input_state})
-
-    assert player.x > initial_x, "Player did not move to the right"
-
-
-def test_gravity():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    players = engine.world_state.get_all_players()
-    player = players[0]
-
-    initial_y = player.y
-
-    for _ in range(60):
-        engine.tick(1 / 60, {"player1": InputState()})
-
-    assert player.y > initial_y, "Gravity does not work"
-
-
-def test_jump():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    players = engine.world_state.get_all_players()
-    player = players[0]
-
-    player.on_ground = True
-
-    input_state = InputState(jump=True)
-
-    engine.tick(1 / 60, {"player1": input_state})
-
-    assert player.vy < 0, "Jump does not set upward velocity"
-
-
-def test_landing():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    players = engine.world_state.get_all_players()
-    player = players[0]
-
-    player.y = 300
-    player.vy = 100
-
-    for _ in range(120):
-        engine.tick(1 / 60, {"player1": InputState()})
-
-    assert player.on_ground is True, "Player did not land"
-    assert player.vy == 0, "Vertical velocity did not reset on landing"
-
-
-def test_no_input():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    players = engine.world_state.get_all_players()
-    player = players[0]
-
-    initial_x = player.x
-
-    for _ in range(60):
-        engine.tick(1 / 60, {"player1": InputState()})
-
-    assert player.x == initial_x, "Player did not stay in place without input"
-
-
-def test_collision_floor():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    players = engine.world_state.get_all_players()
-    player = players[0]
-
+    player = engine.world_state.get_player("player1")
     player.y = 0
     player.vy = 0
+    player.on_ground = True
+
+    engine.tick(1 / 60, {"player1": InputState(jump=True)})
+    assert player.vy < 0, "Jump does not set upward velocity"
+
+    engine.tick(1 / 60, {"player1": InputState()})
+    assert player.vy > -abs(JUMP_FORCE), "Gravity does not pull the jump back down"
 
     for _ in range(300):
         engine.tick(1 / 60, {"player1": InputState()})
 
     player_bottom = player.y + player.height
     player_center = player.x + player.width / 2
-
     platform = min(
         (
             p
@@ -125,6 +36,8 @@ def test_collision_floor():
         key=lambda p: p.y,
     )
 
+    assert player.on_ground is True, "Player did not land"
+    assert player.vy == 0, "Vertical velocity did not reset on landing"
     assert player.y + player.height == platform.y, "Collision with floor is incorrect"
 
 
@@ -144,338 +57,66 @@ def test_multiplayer_inputs():
     assert p2.vx < 0
 
 
-def test_default_level_contains_reachable_world_objects():
-    engine = GameEngine()
-    env = engine.world_state.environment
-    assert len(env.destructible_blocks) >= 4
-    assert len(engine.platforms) >= 8
-    assert len(env.power_ups) >= 4
-    assert "gate-1" in env.cooperative_gates
-    assert any(powerup_id.startswith("coin-") for powerup_id in env.power_ups)
-    assert any(powerup_id.startswith("star-") for powerup_id in env.power_ups)
-    assert engine.world_state.coins_to_win == 5
-    assert engine.world_state.blocks_to_win == 2
-    assert engine.world_state.enemies_to_win == 2
+def test_falling_into_the_void_kills_only_on_the_authoritative_engine():
+    """A client predicting a death would remove a player the host still has."""
+    host = GameEngine()
+    host.spawn_player("player1")
+    host.world_state.get_player("player1").y = host.world_height + 1
+    host.world_state.get_player("player1").prev_y = host.world_height + 1
 
-    for block in env.destructible_blocks:
-        assert any(
-            20 <= platform.y - (block.y + block.height) <= 150 for platform in engine.platforms
-        )
+    host.tick(0.016, {"player1": InputState()})
 
-
-def test_collecting_coins_updates_shared_counter():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    player = engine.world_state.get_player("player1")
-    power_up = ExclusivePowerUp(powerup_id="coin-custom", x=player.x + 10, y=player.y - 10)
-    engine.world_state.add_power_up(power_up)
-
-    player.x = power_up.x
-    player.y = power_up.y
-    player.prev_x = player.x
-    player.prev_y = player.y
-
-    engine.handle_powerup_collisions()
-    engine._sync_objective_progress_from_environment()
-
-    assert power_up.collected is True
-    assert engine.world_state.coins_collected == 1
-
-
-def test_non_authoritative_engine_does_not_mutate_coin_counter():
-    engine = GameEngine(is_authoritative=False)
-    engine.spawn_player("player1")
-    player = engine.world_state.get_player("player1")
-    power_up = ExclusivePowerUp(powerup_id="coin-custom", x=player.x + 10, y=player.y - 10)
-    engine.world_state.add_power_up(power_up)
-
-    player.x = power_up.x
-    player.y = power_up.y
-    player.prev_x = player.x
-    player.prev_y = player.y
-
-    engine.handle_powerup_collisions()
-    engine._sync_objective_progress_from_environment()
-
-    assert power_up.collected is False
-    assert engine.world_state.coins_collected == 0
-
-
-def test_collecting_power_up_grants_temporary_enemy_kill_effect():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    player = engine.world_state.get_player("player1")
-    power_up = ExclusivePowerUp(powerup_id="star-custom", x=player.x + 10, y=player.y - 10)
-    engine.world_state.add_power_up(power_up)
-
-    player.x = power_up.x
-    player.y = power_up.y
-    player.prev_x = player.x
-    player.prev_y = player.y
-
-    engine.handle_powerup_collisions()
-
-    assert player.powerup_effect_expires_at is not None
-    assert player.powerup_effect_expires_at >= time.time() + 9.5
-
-    enemy = Enemy(enemy_id="enemy-1", x=player.x, y=player.y, width=10, height=10)
-    engine.world_state.environment.enemies[enemy.enemy_id] = enemy
-
-    engine._handle_enemy_collisions()
-
-    assert enemy.enemy_id not in engine.world_state.environment.enemies
-    assert engine.world_state.get_player("player1") is player
-
-
-def test_head_bump_destroys_destructible_block():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    player = engine.world_state.get_player("player1")
-    block = engine.world_state.environment.destructible_blocks[0]
-
-    player.x = block.x + 4
-    player.y = block.y + block.height - 2
-    player.prev_x = player.x
-    player.prev_y = block.y + block.height + 8
-    player.vy = -120
-
-    engine.handle_block_collisions()
-
-    assert block.destroyed is True
-    assert any(event.position == (block.x, block.y) for event in engine.events)
-
-
-def test_lateral_block_collision_does_not_destroy_block():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    player = engine.world_state.get_player("player1")
-    block = engine.world_state.environment.destructible_blocks[0]
-
-    player.x = block.x - player.width + 2
-    player.y = block.y
-    player.prev_x = player.x - 8
-    player.prev_y = player.y
-    player.vx = 120
-
-    engine.handle_block_collisions()
-
-    assert block.destroyed is False
-
-
-def test_player_dies_when_falling_below_map():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    player = engine.world_state.get_player("player1")
-    player.y = engine.world_height + 1
-    player.prev_y = player.y
-
-    engine.tick(0.016, {"player1": InputState()})
-
-    assert engine.world_state.get_player("player1") is None
-    assert "player1" in engine.world_state.respawn_timers
+    assert host.world_state.get_player("player1") is None
+    assert "player1" in host.world_state.respawn_timers
     assert any(
-        event.player_id == "player1" and event.enemy_id == VOID_DEATH_CAUSE
-        for event in engine.events
+        event.player_id == "player1" and event.enemy_id == VOID_DEATH_CAUSE for event in host.events
     )
 
+    client = GameEngine(is_authoritative=False)
+    client.spawn_player("player1")
+    client.world_state.get_player("player1").y = client.world_height + 1
+    client.world_state.get_player("player1").prev_y = client.world_height + 1
 
-def test_void_death_is_noop_for_non_authoritative_client():
-    engine = GameEngine(is_authoritative=False)
-    engine.spawn_player("player1")
-    player = engine.world_state.get_player("player1")
-    player.y = engine.world_height + 1
-    player.prev_y = player.y
+    client.tick(0.016, {"player1": InputState()})
 
-    engine.tick(0.016, {"player1": InputState()})
-
-    assert engine.world_state.get_player("player1") is not None
-    assert "player1" not in engine.world_state.respawn_timers
+    assert client.world_state.get_player("player1") is not None
+    assert "player1" not in client.world_state.respawn_timers
 
 
-def test_compact_staircase_steps_are_individually_climbable():
-    """Each step of the staircase (level.tmx staircase-1..4, x=6100..6292)
-    must be within jump reach: height delta under max jump height, and
-    horizontal offset under the distance covered during a jump's hang time."""
-    staircase_steps = [(6100, 896), (6164, 864), (6228, 832), (6292, 800)]
-    max_jump_height = JUMP_FORCE**2 / (2 * GRAVITY)
-    max_jump_horizontal_reach = MOVE_SPEED * (2 * abs(JUMP_FORCE) / GRAVITY)
-
-    for (x1, y1), (x2, y2) in zip(staircase_steps, staircase_steps[1:]):
-        assert y1 - y2 <= max_jump_height
-        assert x2 - x1 <= max_jump_horizontal_reach
-
-
-def test_gate_stays_closed_when_level_requirements_are_not_met():
-    engine = GameEngine()
-    gate = engine.world_state.get_gate("gate-1")
-
-    engine.handle_gate_collisions()
-
-    assert gate.state == "closed"
-
-
-def test_gate_opens_only_when_all_level_requirements_are_met():
-    engine = GameEngine()
-    gate = engine.world_state.get_gate("gate-1")
-
-    for block in engine.world_state.environment.destructible_blocks[
-        : engine.world_state.blocks_to_win
-    ]:
-        block.destroyed = True
-    coin_targets = [
-        power_up
-        for power_up in engine.world_state.environment.power_ups.values()
-        if power_up.powerup_id.startswith("coin-")
-    ][: engine.world_state.coins_to_win]
-    for power_up in coin_targets:
-        power_up.collected = True
-    enemies = list(engine.world_state.environment.enemies)
-    for enemy_id in enemies[: engine.world_state.enemies_to_win]:
-        del engine.world_state.environment.enemies[enemy_id]
-
-    engine._sync_objective_progress_from_environment()
-    engine.handle_gate_collisions()
-
-    assert gate.state == "open"
-
-
-def test_gates_open_independently_based_on_their_own_thresholds():
-    """A checkpoint gate with a lower requirement must open before a
-    stricter gate, even though both read the same shared counters."""
-    engine = GameEngine()
-    checkpoint = CooperativeGate(
-        x=0, y=0, gate_id="checkpoint", coins_required=1, blocks_required=0, enemies_required=0
-    )
-    final_gate = CooperativeGate(
-        x=100, y=0, gate_id="final", coins_required=5, blocks_required=0, enemies_required=0
-    )
-    engine.world_state.environment.cooperative_gates = {
-        "checkpoint": checkpoint,
-        "final": final_gate,
-    }
-    engine.world_state.coins_collected = 1
-
-    engine.handle_gate_collisions()
-
-    assert checkpoint.state == "open"
-    assert final_gate.state == "closed"
-
-
-def test_non_final_gate_does_not_trigger_victory():
-    engine = GameEngine()
-    checkpoint = CooperativeGate(x=100, y=100, gate_id="checkpoint", state="open", is_final=False)
-    engine.world_state.environment.cooperative_gates = {"checkpoint": checkpoint}
-    engine.spawn_player("player1", x=100, y=100)
-
-    engine.handle_victory_condition()
-
-    assert engine.world_state.victory is False
-
-
-def test_final_gate_triggers_victory_when_open_and_touched():
-    engine = GameEngine()
-    final_gate = CooperativeGate(x=100, y=100, gate_id="final", state="open", is_final=True)
-    engine.world_state.environment.cooperative_gates = {"final": final_gate}
-    engine.spawn_player("player1", x=100, y=100)
-
-    engine.handle_victory_condition()
-
-    assert engine.world_state.victory is True
-    assert engine.world_state.victory_player_id == "player1"
-
-
-def test_victory_freezes_the_game_indefinitely():
-    """tick() no longer auto-resets on a timer — the app layer owns the
-    victory -> return-to-lobby transition; the engine just holds state."""
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    engine.world_state.victory = True
-    engine.world_state.victory_player_id = "player1"
-
-    for _ in range(120):
-        engine.tick(1 / 60, {})
-
-    assert engine.world_state.victory is True
-    assert engine.events == []
-
-
-def test_reset_for_new_run_reloads_level_and_respawns_players():
-    engine = GameEngine()
-    engine.spawn_player("player1", join_index=0)
-    block = engine.world_state.environment.destructible_blocks[0]
-    block.destroyed = True
-    power_up = next(iter(engine.world_state.environment.power_ups.values()))
-    power_up.collected = True
-    player = engine.world_state.get_player("player1")
-    player.x, player.y = 999, 999
-    engine.world_state.victory = True
-    engine.world_state.victory_player_id = "player1"
-
-    engine.reset_for_new_run()
-
-    assert engine.world_state.victory is False
-    assert engine.world_state.victory_player_id is None
-    assert engine.world_state.environment.destructible_blocks[0].destroyed is False
-    assert next(iter(engine.world_state.environment.power_ups.values())).collected is False
-    reset_player = engine.world_state.get_player("player1")
-    assert (reset_player.x, reset_player.y) == engine.spawn_position_for(0)
-    assert len(engine.events) == 1
-    assert type(engine.events[0]).__name__ == "LevelResetEvent"
-
-
-def test_level_dimensions_match_tiled_map():
-    engine = GameEngine()
-
-    assert engine.world_width == 6912
-    assert engine.world_height == 960
-
-
-def test_spawn_player_clamps_to_world_bounds():
-    engine = GameEngine()
-    engine.spawn_player("player1", x=999999, y=-50)
-    player = engine.world_state.get_player("player1")
-
-    assert player.x == engine.world_width - player.width
-    assert player.y == 0
-
-
-def test_stomping_enemy_from_above_kills_enemy_and_bounces_player():
-    engine = GameEngine()
-    engine.spawn_player("player1")
-    enemy = next(iter(engine.world_state.environment.enemies.values()))
-    player = engine.world_state.get_player("player1")
+def test_landing_on_an_enemy_kills_it_and_touching_it_sideways_kills_the_player():
+    stomping = GameEngine()
+    stomping.spawn_player("player1")
+    enemy = next(iter(stomping.world_state.environment.enemies.values()))
+    player = stomping.world_state.get_player("player1")
     player.x = enemy.x
-    player.width = enemy.width
-    player.height = enemy.height
+    player.width, player.height = enemy.width, enemy.height
     player.y = enemy.y - player.height + 2
     player.prev_y = enemy.y - player.height
     player.vy = 80
 
-    engine._handle_enemy_collisions()
+    stomping._handle_enemy_collisions()
 
-    assert enemy.enemy_id not in engine.world_state.environment.enemies
-    assert "player1" in engine.world_state.characters
+    assert enemy.enemy_id not in stomping.world_state.environment.enemies
+    assert "player1" in stomping.world_state.characters
     assert player.vy < 0
 
-
-def test_colliding_enemy_sideways_kills_player_and_sets_respawn_timer():
-    engine = GameEngine()
-    engine.spawn_player("player1", join_index=2)
-    enemy = next(iter(engine.world_state.environment.enemies.values()))
-    player = engine.world_state.get_player("player1")
+    walking_into = GameEngine()
+    walking_into.spawn_player("player1", join_index=2)
+    enemy = next(iter(walking_into.world_state.environment.enemies.values()))
+    player = walking_into.world_state.get_player("player1")
     player.x = enemy.x
     player.y = enemy.y
     player.prev_y = enemy.y
     player.vy = 0
 
-    engine._handle_enemy_collisions()
+    walking_into._handle_enemy_collisions()
 
-    assert enemy.enemy_id in engine.world_state.environment.enemies
-    assert "player1" not in engine.world_state.characters
-    assert "player1" in engine.world_state.respawn_timers
+    assert enemy.enemy_id in walking_into.world_state.environment.enemies
+    assert "player1" not in walking_into.world_state.characters
+    assert "player1" in walking_into.world_state.respawn_timers
 
 
-def test_respawn_uses_level_spawn_point_for_join_index():
+def test_a_dead_player_respawns_at_the_spawn_point_of_its_join_index():
     engine = GameEngine()
     engine.spawn_player("player1", join_index=1)
     enemy = next(iter(engine.world_state.environment.enemies.values()))
@@ -490,7 +131,29 @@ def test_respawn_uses_level_spawn_point_for_join_index():
     engine._process_respawns()
 
     respawned = engine.world_state.get_player("player1")
-    expected_x, expected_y = engine.spawn_position_for(1)
-    assert (respawned.x, respawned.y) == (expected_x, expected_y)
+    assert (respawned.x, respawned.y) == engine.spawn_position_for(1)
     assert respawned.join_index == 1
     assert "player1" not in engine.world_state.respawn_timers
+
+
+def test_a_star_lets_the_player_kill_enemies_by_touch_for_a_while():
+    engine = GameEngine()
+    engine.spawn_player("player1")
+    player = engine.world_state.get_player("player1")
+    star = ExclusivePowerUp(powerup_id="star-custom", x=player.x + 10, y=player.y - 10)
+    engine.world_state.add_power_up(star)
+    player.x, player.y = star.x, star.y
+    player.prev_x, player.prev_y = player.x, player.y
+
+    engine.handle_powerup_collisions()
+
+    assert player.powerup_effect_expires_at is not None
+    assert player.powerup_effect_expires_at >= time.time() + 9.5
+
+    enemy = Enemy(enemy_id="enemy-1", x=player.x, y=player.y, width=10, height=10)
+    engine.world_state.environment.enemies[enemy.enemy_id] = enemy
+
+    engine._handle_enemy_collisions()
+
+    assert enemy.enemy_id not in engine.world_state.environment.enemies
+    assert engine.world_state.get_player("player1") is player

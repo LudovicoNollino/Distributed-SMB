@@ -27,7 +27,8 @@ include = ["src/distributed_smb/assets/*/*.png"]
 [dependency-groups]
 dev = [
     "pytest (>=9.0.2,<10.0.0)",
-    "ruff (>=0.14.14,<0.15.0)"
+    "ruff (>=0.14.14,<0.15.0)",
+    "pytestarch (>=4.0.1,<5.0.0)"
 ]
 
 [tool.pytest.ini_options]
