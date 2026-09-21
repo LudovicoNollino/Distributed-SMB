@@ -7,15 +7,15 @@ import pytest
 
 from distributed_smb.application.node_controller import NodeController
 from distributed_smb.application.protocols import NoopGameEventBroker, NoopLobbyService
-from distributed_smb.network.game_event_server import (
+from distributed_smb.network.game_events.server import (
     launch_game_event_server,
     send_game_event,
 )
-from distributed_smb.network.game_event_server import (
+from distributed_smb.network.game_events.server import (
     reset as reset_game_event_server,
 )
 from distributed_smb.network.serializer import Serializer
-from distributed_smb.network.ws_handler import WsHandler
+from distributed_smb.network.transport.websocket import WsHandler
 from distributed_smb.shared.config import (
     GAME_EVENT_WS_PATH,
     LOBBY_STARTUP_WAIT,

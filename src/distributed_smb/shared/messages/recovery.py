@@ -1,4 +1,4 @@
-"""Host discovery and rejoin messages (M9).
+"""Host discovery and rejoin messages.
 
 UDP point-to-point messages used by a recovering node to locate the
 currently-acting host after a crash + process restart. Unlike election

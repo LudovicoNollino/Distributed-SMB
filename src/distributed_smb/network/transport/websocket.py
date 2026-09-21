@@ -5,6 +5,7 @@ import json
 import logging
 import queue
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -102,3 +103,27 @@ class WsHandler:
             asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
         if self._thread is not None:
             self._thread.join(timeout=3.0)
+
+
+def connect_with_retries(
+    handler: "WsHandler",
+    *,
+    label: str,
+    attempts: int = 10,
+    timeout: float = 2.0,
+    delay: float = 1.0,
+) -> None:
+    """Connect to a server that may still be starting up.
+
+    A node launches its own lobby/relay containers and connects to them right
+    after, so the first attempts legitimately fail while Docker brings them up.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            handler.connect(timeout=timeout)
+            return
+        except (ConnectionError, TimeoutError, OSError):
+            if attempt == attempts:
+                raise
+            LOGGER.info("%s not ready yet (attempt %d/%d), retrying…", label, attempt, attempts)
+            time.sleep(delay)

@@ -8,17 +8,17 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
-from distributed_smb.application.client_gameplay import ClientGameplayMixin
 from distributed_smb.application.dto import RenderFrame, build_render_frame
 from distributed_smb.application.election import (
     ElectionCoordinator,
     EnvironmentalStateBuffer,
     HostTimeoutWatcher,
 )
-from distributed_smb.application.election_mixin import ElectionMixin
-from distributed_smb.application.game_event_dispatcher import GameEventMixin
-from distributed_smb.application.host_gameplay import HostGameplayMixin
-from distributed_smb.application.lobby_coordinator import (
+from distributed_smb.application.election.mixin import ElectionMixin
+from distributed_smb.application.gameplay.client import ClientGameplayMixin
+from distributed_smb.application.gameplay.events import GameEventMixin
+from distributed_smb.application.gameplay.host import HostGameplayMixin
+from distributed_smb.application.lobby.coordinator import (
     LobbyCancelledError,
     LobbyMixin,
     LobbyUpdateCallback,
@@ -44,13 +44,14 @@ from distributed_smb.application.reconciliation import (
     PredictionEngineProtocol,
     ShadowCopyProtocol,
 )
-from distributed_smb.application.recovery_mixin import RecoveryMixin
+from distributed_smb.application.recovery.mixin import RecoveryMixin
+from distributed_smb.domain.entity import Player
 from distributed_smb.domain.game_engine import GameEngine
 from distributed_smb.domain.lifecycle import NodeLifecycle
-from distributed_smb.domain.world import CharacterState, WorldState
+from distributed_smb.domain.world import WorldState
 from distributed_smb.network.serializer import Serializer
-from distributed_smb.network.udp_handler import UdpHandler
-from distributed_smb.network.ws_handler import WsHandler
+from distributed_smb.network.transport.udp import UdpHandler
+from distributed_smb.network.transport.websocket import WsHandler
 from distributed_smb.shared.config import (
     DEFAULT_HOST,
     DEFAULT_PACKET_DROP_RATE,
@@ -153,24 +154,24 @@ class NodeController(
     host_last_payload_bytes: int = 0
     client_last_frame_at: float | None = None
     client_frame_intervals: list[float] = field(default_factory=list)
-    # --- M8: fault tolerance ---
+    # --- Fault tolerance: host failure detection and election ---
     join_index: int = 0
     election_coordinator: ElectionCoordinator | None = None
     timeout_watcher: HostTimeoutWatcher | None = None
     env_state_buffer: EnvironmentalStateBuffer | None = None
     election_triggered: bool = False
     reconnected: bool = False
-    # --- M8: election claim tracking ---
+    # --- Election: pending acks for the claim we broadcast ---
     _pending_election_acks: set = field(default_factory=set)
     _election_claim_deadline: float = 0.0
     _promotion_done: bool = False
-    # --- M8: reconnection fallback (relay-independent) ---
+    # --- Reconnection fallback, for when the relay died with the host ---
     _following_host_ip: str | None = None
     _following_since: float = 0.0
-    # --- M8: verify-before-electing (avoid false positives from brief stalls) ---
+    # --- Verify before electing: a brief stall is not a crash ---
     _host_verify_deadline: float = 0.0
     _host_verify_next_probe: float = 0.0
-    # --- M8: background lobby re-registration after promotion (see ElectionMixin) ---
+    # --- Lobby re-registration after a promotion, off the frame loop ---
     _relaunch_thread: Any | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -308,10 +309,10 @@ class NodeController(
     def _build_visual_world_state(
         self,
         *,
-        local_visual_state: CharacterState | None = None,
+        local_visual_state: Player | None = None,
     ) -> WorldState:
         """Build a render-only snapshot separated from the authoritative world state."""
-        visual_characters: dict[str, CharacterState] = {}
+        visual_characters: dict[str, Player] = {}
         local_player_respawning = self.local_player_id in self.engine.world_state.respawn_timers
 
         for player_id, character in self.engine.world_state.characters.items():

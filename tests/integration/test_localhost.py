@@ -6,8 +6,8 @@ import pytest
 
 from distributed_smb.application.node_controller import NodeController
 from distributed_smb.application.protocols import NoopGameEventBroker, NoopLobbyService
-from distributed_smb.network.lobby_service import launch_lobby_server, lobby_manager
-from distributed_smb.network.ws_handler import WsHandler
+from distributed_smb.network.lobby.service import launch_lobby_server, lobby_manager
+from distributed_smb.network.transport.websocket import WsHandler
 from distributed_smb.shared.config import LOBBY_STARTUP_WAIT
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState

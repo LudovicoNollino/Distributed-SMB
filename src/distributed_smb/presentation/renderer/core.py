@@ -5,16 +5,16 @@ from dataclasses import dataclass, field
 import pygame
 
 from distributed_smb.application.dto import RenderCharacter, RenderFrame
-from distributed_smb.presentation.renderer_camera import CameraController
-from distributed_smb.presentation.renderer_state import RenderStateTracker
-from distributed_smb.presentation.renderer_support import (
+from distributed_smb.presentation.renderer.camera import CameraController
+from distributed_smb.presentation.renderer.state import RenderStateTracker
+from distributed_smb.presentation.renderer.support import (
     BACKGROUND_DECORATION_KINDS,
     FOREGROUND_DECORATION_KINDS,
     EffectRenderer,
     PlayerDeathEffect,
     RendererSpriteSystem,
 )
-from distributed_smb.presentation.renderer_ui import UiRenderer
+from distributed_smb.presentation.renderer.ui import UiRenderer
 from distributed_smb.shared.config import WINDOW_HEIGHT, WINDOW_WIDTH
 
 
@@ -88,9 +88,6 @@ class Renderer:
         if state == "walk":
             return (pygame.time.get_ticks() // 140) % 2
         return 0
-
-    def _world_bounds(self, frame: RenderFrame, platforms: list[pygame.Rect]) -> tuple[int, int]:
-        return self._camera_controller.world_bounds(frame, platforms)
 
     def _camera_offset(self, frame: RenderFrame, platforms: list[pygame.Rect]) -> tuple[int, int]:
         return self._camera_controller.camera_offset(frame, platforms)

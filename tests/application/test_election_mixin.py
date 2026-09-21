@@ -4,7 +4,23 @@ import json
 import time
 
 import pytest
-from election_harness import (
+
+from distributed_smb.application.election import SelfElected
+from distributed_smb.application.node_controller import NodeController
+from distributed_smb.domain.entity import DestructibleBlock
+from distributed_smb.domain.world import EnvironmentalState, WorldState
+from distributed_smb.network.transport.udp import UdpHandler
+from distributed_smb.shared.config import (
+    ELECTION_CLAIM_TIMEOUT_S,
+    GAME_EVENT_WS_PORT,
+    HOST_UDP_PORT,
+)
+from distributed_smb.shared.enums import MessageType, PlayerRole
+from distributed_smb.shared.messages.election import NewHostClaim, ReconnectionAck
+from distributed_smb.shared.messages.session import SessionRecreate
+from distributed_smb.shared.messages.sync import WorldStateSnapshot
+from distributed_smb.shared.roster import GlobalRoster
+from tests.application.election_harness import (
     RECONNECTION_ACK,
     SESSION,
     FakeWsHandler,
@@ -16,22 +32,6 @@ from election_harness import (
     make_controller,
     peer,
 )
-
-from distributed_smb.application.election import SelfElected
-from distributed_smb.application.node_controller import NodeController
-from distributed_smb.domain.entity import DestructibleBlock
-from distributed_smb.domain.world import EnvironmentalState, WorldState
-from distributed_smb.network.udp_handler import UdpHandler
-from distributed_smb.shared.config import (
-    ELECTION_CLAIM_TIMEOUT_S,
-    GAME_EVENT_WS_PORT,
-    HOST_UDP_PORT,
-)
-from distributed_smb.shared.enums import MessageType, PlayerRole
-from distributed_smb.shared.messages.election import NewHostClaim, ReconnectionAck
-from distributed_smb.shared.messages.session import SessionRecreate
-from distributed_smb.shared.messages.sync import WorldStateSnapshot
-from distributed_smb.shared.roster import GlobalRoster
 
 pytestmark = pytest.mark.usefixtures("no_real_lobby_relaunch")
 
@@ -173,7 +173,7 @@ def test_the_promoted_host_re_registers_the_session_for_rejoining_nodes(monkeypa
     nc.lobby_service = SpyLobbyService()
     fake_ws = FakeWsHandler()
     monkeypatch.setattr(
-        "distributed_smb.application.election_mixin.WsHandler", lambda *a, **kw: fake_ws
+        "distributed_smb.application.election.mixin.WsHandler", lambda *a, **kw: fake_ws
     )
 
     nc._promote_to_host()

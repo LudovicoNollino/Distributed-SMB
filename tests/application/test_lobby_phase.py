@@ -8,8 +8,8 @@ import pytest
 
 from distributed_smb.application.node_controller import NodeController
 from distributed_smb.application.protocols import NoopGameEventBroker, NoopLobbyService
-from distributed_smb.network.lobby_service import launch_lobby_server, lobby_manager
-from distributed_smb.network.ws_handler import WsHandler
+from distributed_smb.network.lobby.service import launch_lobby_server, lobby_manager
+from distributed_smb.network.transport.websocket import WsHandler
 from distributed_smb.shared.config import LOBBY_STARTUP_WAIT
 from distributed_smb.shared.enums import PlayerRole
 
@@ -61,7 +61,7 @@ def _join_or_cancel(stop: threading.Event, *threads: threading.Thread) -> None:
 def test_host_lobby_phase_single_player():
     host = _make_host()
 
-    with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+    with patch("distributed_smb.application.lobby.coordinator.time.sleep"):
         roster = host.lobby_phase(start_requested=lambda: True)
 
     assert host.session_id != ""
@@ -102,7 +102,7 @@ def test_replay_lobby_phase_resets_engine_without_new_session(run_lobby_pair):
 
     def replay_host():
         try:
-            with patch("distributed_smb.application.lobby_coordinator.time.sleep"):
+            with patch("distributed_smb.application.lobby.coordinator.time.sleep"):
                 host.replay_lobby_phase(
                     start_requested=lambda: True,
                     on_update=lambda *a: not stop_replay.is_set(),
@@ -131,7 +131,7 @@ def test_replay_lobby_phase_resets_engine_without_new_session(run_lobby_pair):
 
 
 def _run_lobby_until_cancelled(ctrl, errors, **kwargs):
-    from distributed_smb.application.lobby_coordinator import (
+    from distributed_smb.application.lobby.coordinator import (
         LobbyCancelledError,
         SessionClosedError,
     )
@@ -201,7 +201,7 @@ def test_a_client_leaving_disappears_from_the_hosts_roster():
 def test_the_host_leaving_sends_every_client_back_to_the_menu():
     """End-to-end: when the host leaves, a waiting client's lobby phase must
     end with SessionClosedError instead of waiting forever."""
-    from distributed_smb.application.lobby_coordinator import SessionClosedError
+    from distributed_smb.application.lobby.coordinator import SessionClosedError
 
     host = _make_host()
     client = _make_client()

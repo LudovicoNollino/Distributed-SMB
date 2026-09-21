@@ -3,11 +3,10 @@
 import time
 
 import pytest
-from election_harness import FakeRecoveryProber, make_controller, peer
 
 from distributed_smb.application.election import HostTimeoutWatcher
-from distributed_smb.domain.world import CharacterState
-from distributed_smb.network.udp_handler import UdpHandler
+from distributed_smb.domain.entity import Player
+from distributed_smb.network.transport.udp import UdpHandler
 from distributed_smb.shared.config import (
     HOST_TIMEOUT_S,
     HOST_VERIFY_TIMEOUT_S,
@@ -16,6 +15,7 @@ from distributed_smb.shared.config import (
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.recovery import HostIdentityResponse
+from tests.application.election_harness import FakeRecoveryProber, make_controller, peer
 
 pytestmark = pytest.mark.usefixtures("no_real_lobby_relaunch")
 
@@ -128,7 +128,7 @@ def test_an_unanswered_claim_promotes_us_and_fully_evicts_the_silent_peer():
 
     nc, _ = make_controller()
     nc.roster.add_player(peer("player3", "10.0.0.3", 50012, 2))
-    nc.engine.world_state.add_player(CharacterState(player_id="player3"))
+    nc.engine.world_state.add_player(Player(player_id="player3"))
     nc.cached_remote_inputs["player3"] = InputState()
     nc.last_remote_input_sequence["player3"] = 5
     nc.last_input_time["player3"] = time.time()

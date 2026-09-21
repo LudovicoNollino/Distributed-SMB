@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from distributed_smb.network.lobby_service import app, lobby_manager
+from distributed_smb.network.lobby.service import app, lobby_manager
 from distributed_smb.shared.enums import MessageType
 from distributed_smb.shared.roster import GlobalRoster, RosterEntry
 

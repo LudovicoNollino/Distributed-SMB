@@ -132,7 +132,7 @@ class LobbyManager:
     def register_active_session(
         self, session_id: str, roster: GlobalRoster, next_join_index: int
     ) -> None:
-        """Pre-seed an already-running session so rejoining nodes can connect (M9)."""
+        """Pre-seed an already-running session so rejoining nodes can connect."""
         entries = [
             {
                 "player_id": e.player_id,
@@ -210,7 +210,7 @@ async def lobby_endpoint(ws: WebSocket) -> None:
                     await ws.send_text(json.dumps(_serializer.encode_ws_message(game_start)))
 
             elif message_type == MessageType.SESSION_RECREATE:
-                # Promoted host re-registers an existing session after M8 migration (M9).
+                # The promoted host re-registers an existing session after a migration.
                 # Preserves the session_id so recovering nodes can join with their cached ID.
                 msg: SessionRecreate = _serializer.decode_ws_message(data)
                 session_id = msg.session_id

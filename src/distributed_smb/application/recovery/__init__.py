@@ -1,1 +1,1 @@
-"""Recovery helpers for host probing and rejoin."""
+"""Finding the session again after this node crashed."""

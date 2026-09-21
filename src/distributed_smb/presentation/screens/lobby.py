@@ -214,7 +214,7 @@ class LobbyScreen:
             self._draw_text("Copy", self._small_font, self.text_color, btn_x + 24, btn_y + 10)
         if time.time() < self._copy_flash_until:
             # Right-aligned: shares row 322 with "ENTER also starts" on the left.
-            confirm = "Session ID copiato!"
+            confirm = "Session ID copied!"
             confirm_x = self.width - 78 - self._small_font.size(confirm)[0]
             self._draw_text(confirm, self._small_font, self.accent_color, confirm_x, 322)
 
@@ -260,7 +260,7 @@ class LobbyScreen:
         leave_color = (198, 88, 88) if leave_hovered else (150, 66, 66)
         pygame.draw.rect(self._screen, leave_color, leave_btn, border_radius=8)
         self._draw_text(
-            "Esci  (ESC)",
+            "Leave  (ESC)",
             self._small_font,
             self.text_color,
             leave_btn.x + 22,

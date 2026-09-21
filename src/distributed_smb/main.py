@@ -6,19 +6,19 @@ import socket
 import threading
 import time
 
-from distributed_smb.application.lobby_coordinator import SessionClosedError
+from distributed_smb.application.lobby.coordinator import SessionClosedError
 from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
 from distributed_smb.application.recovery.prober import RecoveryProber
 from distributed_smb.network.discovery import DiscoveryService
-from distributed_smb.network.game_event_broker_http import HttpGameEventBroker
-from distributed_smb.network.game_event_server import GameEventBroker
-from distributed_smb.network.lobby_container import LobbyContainerManager
-from distributed_smb.network.lobby_service import LobbyService
-from distributed_smb.network.ws_handler import WsHandler
+from distributed_smb.network.game_events.broker import HttpGameEventBroker
+from distributed_smb.network.game_events.server import GameEventBroker
+from distributed_smb.network.lobby.container import LobbyContainerManager
+from distributed_smb.network.lobby.service import LobbyService
+from distributed_smb.network.transport.websocket import WsHandler
 from distributed_smb.presentation.input_handler import InputHandler
-from distributed_smb.presentation.lobby_screen import LobbyScreen
-from distributed_smb.presentation.menu_screen import MenuScreen
 from distributed_smb.presentation.renderer import Renderer
+from distributed_smb.presentation.screens.lobby import LobbyScreen
+from distributed_smb.presentation.screens.menu import MenuScreen
 from distributed_smb.shared.config import (
     ARTIFICIAL_LATENCY_MS,
     DEFAULT_HOST,
@@ -156,7 +156,7 @@ def _try_recover_session(
         # session info and can cancel by closing the window.
         if not screen.render(
             role=PlayerRole.CLIENT,
-            status="Rientro nella sessione… Chiudi per annullare",
+            status="Rejoining the session… close the window to cancel",
             session_id=metadata.session_id,
             roster=cached_roster,
         ):
@@ -182,7 +182,7 @@ def _try_recover_session(
         while not probe_done.is_set():
             if not screen.render(
                 role=PlayerRole.CLIENT,
-                status="Rientro nella sessione… Chiudi per annullare",
+                status="Rejoining the session… close the window to cancel",
                 session_id=metadata.session_id,
                 roster=cached_roster,
             ):
@@ -198,6 +198,32 @@ def _try_recover_session(
     finally:
         if lobby_screen is None:
             screen.close()
+
+
+def _point_client_at(controller: NodeController, host_ip: str | None) -> None:
+    """Without discovery the client is told the host address up front."""
+    controller.remote_host = host_ip or DEFAULT_HOST
+    controller.ws_handler = WsHandler(host=host_ip or DEFAULT_HOST, port=LOBBY_WS_PORT)
+
+
+def _prompt_client_join(
+    lobby_screen: LobbyScreen, *, use_discovery: bool, host_ip: str | None, session_id: str
+) -> tuple[str, str | None] | None:
+    """Ask the player what to join. Returns (session_id, host_ip), or None if
+    they cancelled. With discovery on, only the session ID is asked: the host
+    address is resolved over the LAN."""
+    if use_discovery:
+        joined_session_id = lobby_screen.prompt_session_id(initial_session_id=session_id)
+        return None if joined_session_id is None else (joined_session_id, None)
+
+    join_result = lobby_screen.prompt_join_details(
+        initial_host_ip=host_ip or "",
+        initial_session_id=session_id,
+    )
+    if join_result is None:
+        return None
+    joined_host_ip, joined_session_id = join_result
+    return joined_session_id, joined_host_ip or None
 
 
 def main(
@@ -226,32 +252,24 @@ def main(
     if run_app:
         lobby_screen = LobbyScreen()
         if role is PlayerRole.CLIENT and not session_id:
-            if use_discovery:
-                join_result = lobby_screen.prompt_session_id(initial_session_id=session_id)
-            else:
-                join_result = lobby_screen.prompt_join_details(
-                    initial_host_ip=host_ip or "",
-                    initial_session_id=session_id,
-                )
-            if join_result is None:
+            joined = _prompt_client_join(
+                lobby_screen, use_discovery=use_discovery, host_ip=host_ip, session_id=session_id
+            )
+            if joined is None:
                 logging.info("Client join cancelled before connecting to lobby")
                 controller.udp_handler.close_socket()
                 lobby_screen.close()
                 delete_session_metadata()
                 return controller
 
-            if use_discovery:
-                session_id = join_result
-            else:
-                joined_host_ip, session_id = join_result
-                if joined_host_ip:
-                    host_ip = joined_host_ip
-                    use_discovery = False
-                    controller.use_discovery = False
+            session_id, joined_host_ip = joined
+            if joined_host_ip:
+                host_ip = joined_host_ip
+                use_discovery = False
+                controller.use_discovery = False
 
         if role is PlayerRole.CLIENT and not use_discovery:
-            controller.remote_host = host_ip or DEFAULT_HOST
-            controller.ws_handler = WsHandler(host=host_ip or DEFAULT_HOST, port=LOBBY_WS_PORT)
+            _point_client_at(controller, host_ip)
 
         lobby_screen.render(
             role=controller.role,
@@ -340,12 +358,11 @@ def main(
         # here must NOT stop the containers: they need to survive so a promoted
         # host can find them still running and reuse them (see
         # LobbyContainerManager.start()). Stopping them unconditionally in a
-        # finally block raced the next host's own startup — see M8 decision log.
+        # finally block raced the next host's own startup.
         controller.lobby_container_manager.stop()
         delete_session_metadata()
     elif role is PlayerRole.CLIENT and not use_discovery:
-        controller.remote_host = host_ip or DEFAULT_HOST
-        controller.ws_handler = WsHandler(host=host_ip or DEFAULT_HOST, port=LOBBY_WS_PORT)
+        _point_client_at(controller, host_ip)
     return controller
 
 

@@ -8,8 +8,9 @@ from distributed_smb.domain.entity import (
     DestructibleBlock,
     Enemy,
     ExclusivePowerUp,
+    Player,
 )
-from distributed_smb.domain.world import CharacterState, WorldState
+from distributed_smb.domain.world import WorldState
 from distributed_smb.network.serializer import Serializer, WsMessage
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.input import InputState
@@ -121,8 +122,8 @@ def test_the_world_state_survives_both_transports():
     world_state = WorldState(
         sequence_number=3,
         characters={
-            "player1": CharacterState(player_id="player1", x=10.0, y=20.0),
-            "player2": CharacterState(player_id="player2", x=30.0, y=40.0),
+            "player1": Player(player_id="player1", x=10.0, y=20.0),
+            "player2": Player(player_id="player2", x=30.0, y=40.0),
         },
     )
     world_state.add_block(DestructibleBlock(x=120, y=64, destroyed=True))

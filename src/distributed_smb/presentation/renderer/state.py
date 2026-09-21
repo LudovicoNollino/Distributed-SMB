@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from distributed_smb.application.dto import RenderFrame
-from distributed_smb.presentation.renderer_support import PlayerDeathEffect
+from distributed_smb.presentation.renderer.support import PlayerDeathEffect
 
 
 class RenderStateTracker:

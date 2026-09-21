@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from distributed_smb.network.transport.websocket import connect_with_retries
 from distributed_smb.shared.config import (
     GAME_EVENT_WS_PATH,
     GAME_EVENT_WS_PORT,
@@ -111,18 +112,33 @@ class LobbyMixin:
         *,
         on_update: LobbyUpdateCallback | None = None,
     ) -> None:
+        self._wait_for_game_start("Waiting for game to restart", on_update)
+
+    def _wait_for_game_start(
+        self,
+        waiting_status: str,
+        on_update: LobbyUpdateCallback | None,
+        *,
+        adopt_session_id: bool = False,
+    ) -> None:
+        """Block until the host starts the game, keeping the roster up to date.
+
+        The wait has no deadline — the players decide when to start — so the
+        only ways out are the GameStart, the host closing the room, or
+        on_update returning False (the player closed or left the screen).
+        """
         while True:
             msg = self.ws_handler.poll()
             if isinstance(msg, RosterUpdate):
                 self.roster = msg.roster
-                self._notify_lobby_update("Waiting for game to restart", on_update)
             elif isinstance(msg, GameStart):
+                if adopt_session_id:
+                    self.session_id = msg.session_id
                 self._notify_lobby_update("Starting game", on_update)
-                break
+                return
             elif isinstance(msg, SessionClosed):
                 raise SessionClosedError("The host left the lobby")
-            else:
-                self._notify_lobby_update("Waiting for game to restart", on_update)
+            self._notify_lobby_update(waiting_status, on_update)
             time.sleep(0.05)
 
     def leave_lobby(self) -> None:
@@ -171,16 +187,7 @@ class LobbyMixin:
             time.sleep(LOBBY_STARTUP_WAIT)
 
         self._notify_lobby_update("Connecting to lobby", on_update)
-        for attempt in range(10):
-            try:
-                self.ws_handler.connect(timeout=2.0)
-                break
-            except (ConnectionError, TimeoutError):
-                if attempt < 9:
-                    LOGGER.info("lobby not ready yet (attempt %d/10), retrying in 1s…", attempt + 1)
-                    time.sleep(1.0)
-                else:
-                    raise
+        connect_with_retries(self.ws_handler, label="lobby")
         self.ws_handler.send(
             SessionCreate(
                 player_id=self.local_player_id,
@@ -240,16 +247,7 @@ class LobbyMixin:
             host_ip, lobby_port = self.discovery_service.discover(session_id)
             self._make_lobby_ws_client(host_ip, lobby_port)
         self.udp_handler.open_socket()  # bind early so actual port is known before announcing
-        for attempt in range(10):
-            try:
-                self.ws_handler.connect(timeout=2.0)
-                break
-            except (ConnectionError, TimeoutError):
-                if attempt < 9:
-                    LOGGER.info("lobby not ready yet (attempt %d/10), retrying in 1s…", attempt + 1)
-                    time.sleep(1.0)
-                else:
-                    raise
+        connect_with_retries(self.ws_handler, label="lobby")
         self.ws_handler.send(
             SessionJoin(
                 session_id=session_id,
@@ -267,20 +265,7 @@ class LobbyMixin:
             self.prediction_engine.local_player_id = self.local_player_id
         self._notify_lobby_update("Joined session", on_update)
 
-        while True:
-            msg = self.ws_handler.poll()
-            if isinstance(msg, RosterUpdate):
-                self.roster = msg.roster
-                self._notify_lobby_update("Waiting for game start", on_update)
-            elif isinstance(msg, GameStart):
-                self.session_id = msg.session_id
-                self._notify_lobby_update("Starting game", on_update)
-                break
-            elif isinstance(msg, SessionClosed):
-                raise SessionClosedError("The host left the lobby")
-            else:
-                self._notify_lobby_update("Waiting for game start", on_update)
-            time.sleep(0.05)
+        self._wait_for_game_start("Waiting for game start", on_update, adopt_session_id=True)
 
         LOGGER.info("Lobby phase complete: session=%s", self.session_id)
 

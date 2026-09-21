@@ -1,8 +1,8 @@
 from math import isclose
 
 from distributed_smb.application.reconciliation.shadow_copy import InterpolatedShadowCopy
+from distributed_smb.domain.entity import Player
 from distributed_smb.domain.shadow_copy import ShadowCopy
-from distributed_smb.domain.world import CharacterState
 
 
 def _character(
@@ -11,8 +11,8 @@ def _character(
     y: float = 0.0,
     vx: float = 0.0,
     vy: float = 0.0,
-) -> CharacterState:
-    return CharacterState(
+) -> Player:
+    return Player(
         player_id="player2",
         x=x,
         y=y,

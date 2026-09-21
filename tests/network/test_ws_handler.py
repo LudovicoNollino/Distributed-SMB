@@ -2,8 +2,8 @@ import time
 
 import pytest
 
-from distributed_smb.network.lobby_service import launch_lobby_server, lobby_manager
-from distributed_smb.network.ws_handler import WsHandler
+from distributed_smb.network.lobby.service import launch_lobby_server, lobby_manager
+from distributed_smb.network.transport.websocket import WsHandler
 from distributed_smb.shared.config import LOBBY_STARTUP_WAIT
 from distributed_smb.shared.messages.session import (
     RosterUpdate,

@@ -10,14 +10,6 @@ class PlayerRole(StrEnum):
     CLIENT = "client"
 
 
-class SessionPhase(StrEnum):
-    """Session lifecycle states."""
-
-    WAITING = "waiting"
-    PLAYING = "playing"
-    ENDED = "ended"
-
-
 class NodeState(StrEnum):
     """Local node lifecycle states."""
 
@@ -41,7 +33,7 @@ class MessageType(StrEnum):
     PLAYER_INPUT = "player_input"
     WORLD_STATE = "world_state"
 
-    # UDP — host discovery / rejoin (M9)
+    # UDP — host discovery, used when a crashed node rejoins
     HOST_DISCOVERY_PROBE = "host_discovery_probe"
     HOST_IDENTITY_RESPONSE = "host_identity_response"
 

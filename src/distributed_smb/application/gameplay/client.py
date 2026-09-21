@@ -214,6 +214,7 @@ class ClientGameplayMixin:
     # ------------------------------------------------------------------
 
     def _on_reconnection_ack(self, ack: ReconnectionAck) -> None:
+        """Follow the newly promoted host: reconnect, realign, start fresh."""
         if self.reconnected or self._promotion_done:
             return
         self.reconnected = True
@@ -231,45 +232,53 @@ class ClientGameplayMixin:
             ack.game_events_port,
         )
 
-        # Resync locally-predicted environment state (destructible blocks,
-        # power-ups, cooperative gates) against the last known-good pre-crash
-        # snapshot. reconcile() deliberately never overwrites these three
-        # fields from an authoritative snapshot (see M4) to avoid visual
-        # pop-in when this node predicts a block break locally — but that
-        # also means a BlockDestroyedMessage/game event lost during the
-        # crash window (the WS relay can die with the old host) leaves this
-        # node's local copy permanently diverged from every other survivor.
-        # The newly promoted host restores this exact same buffered snapshot
-        # via bootstrap_from_snapshot(); applying it here too keeps every
-        # surviving client in agreement with it at the moment of migration.
-        if self.env_state_buffer is not None:
-            last = self.env_state_buffer.get_last()
-            if last is not None:
-                env = last.world_state.environment
-                self.engine.world_state.environment.destructible_blocks = env.destructible_blocks
-                self.engine.world_state.environment.power_ups = env.power_ups
-                self.engine.world_state.environment.cooperative_gates = env.cooperative_gates
-
+        self._resync_environment_from_buffer()
         # The new host resumes from its own last buffered snapshot, whose sequence
         # can be lower than the last one this client saw — without this reset every
         # snapshot from it would be discarded as stale and never reconciled.
         self.last_snapshot_sequence = 0
+        self._repoint_roster_at(ack.new_host_ip)
+        self._reset_election_state()
+        self._recalibrate_prediction_lead()
 
-        # Sync local roster: evict the crashed host and promote the newly elected one.
-        # Without this, _known_client_peers() would still see the old host as a peer
-        # and _promote_to_host() would evict the wrong entry in any future election.
+    def _resync_environment_from_buffer(self) -> None:
+        """Realign blocks, power-ups and gates with the rest of the survivors.
+
+        reconcile() never overwrites these three from an authoritative snapshot,
+        to avoid visual pop-in when this node predicts a block break locally.
+        That also means an event lost while the old host died would leave this
+        copy diverged forever: the promoted host restores this very snapshot,
+        so applying it here puts everyone back in agreement.
+        """
+        if self.env_state_buffer is None:
+            return
+        last = self.env_state_buffer.get_last()
+        if last is None:
+            return
+        environment = self.engine.world_state.environment
+        environment.destructible_blocks = last.world_state.environment.destructible_blocks
+        environment.power_ups = last.world_state.environment.power_ups
+        environment.cooperative_gates = last.world_state.environment.cooperative_gates
+
+    def _repoint_roster_at(self, new_host_ip: str) -> None:
+        """Evict the crashed host and flag the elected one as host.
+
+        Otherwise _known_client_peers() would still count the dead host as a
+        peer, and a future election would evict the wrong entry.
+        """
         old_host = self.roster.get_host()
         if old_host is not None:
             self._evict_player(old_host.player_id)
-        new_host_entry = next(
-            (e for e in self.roster.get_all_players() if e.host == ack.new_host_ip), None
+        new_host = next(
+            (entry for entry in self.roster.get_all_players() if entry.host == new_host_ip), None
         )
-        if new_host_entry is not None:
-            self.roster.promote_host(new_host_entry.player_id)
+        if new_host is not None:
+            self.roster.promote_host(new_host.player_id)
 
-        # Reset the election machinery so a future host crash triggers a fresh election.
-        # election_triggered stays True after a follow, which silently swallows the second
-        # timeout check and prevents the node from ever detecting a subsequent crash.
+    def _reset_election_state(self) -> None:
+        """Arm the failure detector again: election_triggered stays True after
+        following a claim, which would swallow the next timeout check and blind
+        this node to a second crash."""
         self.election_triggered = False
         self._pending_election_acks = set()
         self._election_claim_deadline = 0.0
@@ -277,10 +286,10 @@ class ClientGameplayMixin:
         self.timeout_watcher = HostTimeoutWatcher(timeout_s=HOST_TIMEOUT_S)
         self._host_verify_deadline = 0.0
 
-        # Reset prediction-lead calibration for the new host. The baseline was frozen
-        # against the old host's RTT; the new host may be on a different machine with
-        # a different round-trip time, which would produce a permanent deviation and
-        # cause sustained reconciliation corrections and visible jitter.
+    def _recalibrate_prediction_lead(self) -> None:
+        """The baseline was frozen against the old host's RTT; the new host may
+        sit on another machine, and a permanent deviation would show up as
+        sustained corrections and visible jitter."""
         self.prediction_lead_baseline = 0.0
         self.prediction_lead_calibration_remaining = PREDICTION_LEAD_CALIBRATION_FRAMES
         self.visual_correction_offset = (0.0, 0.0)

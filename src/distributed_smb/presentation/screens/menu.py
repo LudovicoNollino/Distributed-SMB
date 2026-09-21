@@ -87,8 +87,8 @@ class MenuScreen:
         self._draw_centered_text(
             "What do you want to do?", self._body_font, self.muted_text_color, 160
         )
-        self._draw_button(host_btn, "Crea Stanza", host_hovered)
-        self._draw_button(join_btn, "Entra in Stanza", join_hovered)
+        self._draw_button(host_btn, "Create Room", host_hovered)
+        self._draw_button(join_btn, "Join Room", join_hovered)
         pygame.display.flip()
 
     def _draw_button(self, rect: pygame.Rect, label: str, hovered: bool) -> None:

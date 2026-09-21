@@ -6,7 +6,7 @@ import threading
 import time
 
 from distributed_smb.application.election import FollowingHost, SelfElected
-from distributed_smb.network.ws_handler import WsHandler
+from distributed_smb.network.transport.websocket import WsHandler, connect_with_retries
 from distributed_smb.shared.config import (
     ELECTION_CLAIM_TIMEOUT_S,
     GAME_EVENT_WS_PORT,
@@ -191,7 +191,7 @@ class ElectionMixin:
         self._relaunch_thread.start()
 
     def _relaunch_lobby_for_rejoin(self) -> None:
-        """Bring lobby/game-events infrastructure back up so recovering nodes can rejoin (M9).
+        """Bring lobby/game-events infrastructure back up so crashed nodes can rejoin.
 
         Runs off the main thread deliberately: Docker container startup plus
         the WS handshake retry loop below can take several seconds on
@@ -214,19 +214,7 @@ class ElectionMixin:
         time.sleep(LOBBY_STARTUP_WAIT)
         try:
             lobby_ws = WsHandler(host="localhost", port=LOBBY_WS_PORT)
-            for attempt in range(10):
-                try:
-                    lobby_ws.connect(timeout=2.0)
-                    break
-                except (ConnectionError, TimeoutError, OSError):
-                    if attempt < 9:
-                        LOGGER.info(
-                            "election: lobby not ready yet (attempt %d/10), retrying in 1s…",
-                            attempt + 1,
-                        )
-                        time.sleep(1.0)
-                    else:
-                        raise
+            connect_with_retries(lobby_ws, label="election: lobby")
             all_players = self.roster.get_all_players()
             next_ji = (max(e.join_index for e in all_players) + 1) if all_players else 0
             lobby_ws.send(

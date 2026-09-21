@@ -31,7 +31,7 @@ worst-case stall observed on a single machine running 3 game processes: the
 peer's own process can freeze for that long (CPU contention, not an actual
 disconnect), during which it sends nothing — evicting it that fast turns a
 transient stall into a permanent, unrecoverable loss of that player from the
-authoritative simulation, since nothing re-adds it short of a full M9 rejoin."""
+authoritative simulation, since nothing re-adds it short of a full rejoin."""
 GAME_EVENT_HEARTBEAT_INTERVAL = 5.0  # seconds between WebSocket heartbeat pings
 
 # Lobby coordination timings

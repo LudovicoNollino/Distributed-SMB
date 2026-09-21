@@ -19,7 +19,7 @@ def test_recovery_gives_up_and_cleans_up_when_it_cannot_find_the_session(monkeyp
     the node in RECOVERING with no stale file behind."""
     deleted: list[bool] = []
     monkeypatch.setattr(
-        "distributed_smb.application.recovery_mixin.delete_session_metadata",
+        "distributed_smb.application.recovery.mixin.delete_session_metadata",
         lambda: deleted.append(True),
     )
 
@@ -27,7 +27,7 @@ def test_recovery_gives_up_and_cleans_up_when_it_cannot_find_the_session(monkeyp
         controller = NodeController()
         controller.recovery_prober = _SpyRecoveryProber(host_ip=host_ip)
         monkeypatch.setattr(
-            "distributed_smb.application.recovery_mixin.read_session_metadata", lambda: metadata
+            "distributed_smb.application.recovery.mixin.read_session_metadata", lambda: metadata
         )
         return controller, controller.attempt_recovery()
 
@@ -65,7 +65,7 @@ def test_attempt_recovery_success_sets_remote_host_and_session_id(monkeypatch):
         peers=[CachedPeer(player_id="player-2", ip="127.0.0.2", join_index=1)],
     )
     monkeypatch.setattr(
-        "distributed_smb.application.recovery_mixin.read_session_metadata", lambda: metadata
+        "distributed_smb.application.recovery.mixin.read_session_metadata", lambda: metadata
     )
 
     result = controller.attempt_recovery()
@@ -90,7 +90,7 @@ def test_write_session_metadata_excludes_self(monkeypatch):
         written.append(metadata)
 
     monkeypatch.setattr(
-        "distributed_smb.application.recovery_mixin.write_session_metadata", fake_write
+        "distributed_smb.application.recovery.mixin.write_session_metadata", fake_write
     )
 
     controller._write_session_metadata()

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, replace
 
-from distributed_smb.domain.world import CharacterState
+from distributed_smb.domain.entity import Player
 from distributed_smb.shared.config import MAX_EXTRAPOLATION_TIME, SNAPSHOT_TIMEOUT
 
 
@@ -20,15 +20,15 @@ class ShadowCopy:
 
     snapshot_timeout: float = SNAPSHOT_TIMEOUT
     max_extrapolation_time: float = MAX_EXTRAPOLATION_TIME
-    last_confirmed: CharacterState | None = None
-    target: CharacterState | None = None
+    last_confirmed: Player | None = None
+    target: Player | None = None
     last_sequence_number: int = -1
     last_snapshot_time: float | None = None
     interpolation_window: float = SNAPSHOT_TIMEOUT
 
     def update(
         self,
-        new_snapshot: CharacterState,
+        new_snapshot: Player,
         *,
         sequence_number: int,
         received_at: float,
@@ -60,7 +60,7 @@ class ShadowCopy:
         self.last_snapshot_time = received_at
         return True
 
-    def interpolate(self, alpha: float) -> CharacterState:
+    def interpolate(self, alpha: float) -> Player:
         """Return a visual state linearly interpolated between snapshots."""
         if self.target is None:
             raise ValueError("Cannot interpolate without at least one snapshot")
@@ -77,7 +77,7 @@ class ShadowCopy:
             prev_y=_lerp(start.prev_y, self.target.prev_y, alpha),
         )
 
-    def get_visual_state(self, now: float) -> CharacterState | None:
+    def get_visual_state(self, now: float) -> Player | None:
         """Return the current smoothed visual state for rendering."""
         if self.target is None:
             return None

@@ -1,6 +1,11 @@
 from distributed_smb.application.node_controller import NodeController
-from distributed_smb.domain.entity import CooperativeGate, DestructibleBlock, ExclusivePowerUp
-from distributed_smb.domain.world import CharacterState, WorldState
+from distributed_smb.domain.entity import (
+    CooperativeGate,
+    DestructibleBlock,
+    ExclusivePowerUp,
+    Player,
+)
+from distributed_smb.domain.world import WorldState
 from distributed_smb.network.serializer import Serializer
 from distributed_smb.shared.config import TICK_INTERVAL
 from distributed_smb.shared.enums import NodeState, PlayerRole
@@ -68,7 +73,7 @@ def test_client_snapshot_updates_characters_preserves_environment():
     # A snapshot that tries to override the environment.
     world_state = WorldState(
         sequence_number=12,
-        characters={"player1": CharacterState(player_id="player1", x=180.0, y=96.0)},
+        characters={"player1": Player(player_id="player1", x=180.0, y=96.0)},
     )
     world_state.add_block(DestructibleBlock(x=12, y=20, destroyed=True))
     world_state.add_power_up(
@@ -101,8 +106,8 @@ def test_the_view_shows_the_prediction_and_never_mutates_the_authoritative_state
     authoritative_world = WorldState(
         sequence_number=20,
         characters={
-            "player1": CharacterState(player_id="player1", x=100.0, y=100.0),
-            local_pid: CharacterState(player_id=local_pid, x=100.0, y=100.0),
+            "player1": Player(player_id="player1", x=100.0, y=100.0),
+            local_pid: Player(player_id=local_pid, x=100.0, y=100.0),
         },
     )
     payload = Serializer().encode_message(

@@ -106,7 +106,7 @@ class HostGameplayMixin:
         return len(payload)
 
     def _check_for_rejoining_players(self) -> None:
-        """Detect players that rejoined via lobby WS (M9) and add them to the active game."""
+        """Detect players that rejoined through the lobby and add them to the running game."""
         msg = self.ws_handler.poll()
         if not isinstance(msg, RosterUpdate):
             return

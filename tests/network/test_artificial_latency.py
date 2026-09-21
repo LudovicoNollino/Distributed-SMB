@@ -2,7 +2,7 @@
 
 import time
 
-from distributed_smb.network.udp_handler import UdpHandler
+from distributed_smb.network.transport.udp import UdpHandler
 
 RECEIVER_PORT = 59601
 LATENCY_MS = 100

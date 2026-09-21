@@ -9,8 +9,8 @@ from typing import Any
 import pygame
 
 from distributed_smb.application.dto import RenderCharacter, RenderFrame
-from distributed_smb.presentation.renderer_assets import AssetSpriteFactory
-from distributed_smb.presentation.renderer_world import WorldRenderer
+from distributed_smb.presentation.renderer.assets import AssetSpriteFactory
+from distributed_smb.presentation.renderer.world import WorldRenderer
 
 POWERUP_COLLECTION_EFFECT_MS = 420
 PLAYER_DEATH_EFFECT_MS = 900

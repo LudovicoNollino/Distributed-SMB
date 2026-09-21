@@ -5,7 +5,12 @@ from distributed_smb.domain.events import (
     GateStateChangedEvent,
     PowerUpCollectedEvent,
 )
-from distributed_smb.shared.config import ENEMY_HEIGHT, ENEMY_WIDTH
+from distributed_smb.shared.config import (
+    ENEMY_HEIGHT,
+    ENEMY_WIDTH,
+    PLAYER_HEIGHT,
+    PLAYER_WIDTH,
+)
 
 
 @dataclass(slots=True)
@@ -67,9 +72,6 @@ class CooperativeGate:
     # (lower) requirement — reusing the same shared, cumulative counters.
     is_final: bool = True
 
-    def contribute(self, player_id: str) -> None:
-        self.contributions.add(player_id)
-
     def update_state(self, should_be_open: bool) -> GateStateChangedEvent | None:
         new_state = "open" if should_be_open else "closed"
 
@@ -90,3 +92,22 @@ class Enemy:
     vx: float = 50.0
     left_bound: float = 0.0
     right_bound: float = 0.0
+
+
+@dataclass(slots=True)
+class Player:
+    """A player character: what every node simulates and reconciles."""
+
+    player_id: str
+    x: float = 0.0
+    y: float = 0.0
+    vx: float = 0.0
+    vy: float = 0.0
+    width: int = PLAYER_WIDTH
+    height: int = PLAYER_HEIGHT
+    on_ground: bool = False
+    is_crouching: bool = False
+    prev_x: float = 0.0
+    prev_y: float = 0.0
+    join_index: int = 0
+    powerup_effect_expires_at: float | None = None

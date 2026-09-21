@@ -7,7 +7,7 @@ from typing import Any
 import pygame
 
 from distributed_smb.application.dto import RenderFrame
-from distributed_smb.presentation.renderer_assets import (
+from distributed_smb.presentation.renderer.assets import (
     DECORATION_SOURCE_RECTS,
     DISPLAY_TILE_SIZE,
     TILE_SIZE,

@@ -4,11 +4,11 @@ import time
 from dataclasses import dataclass, field
 
 from distributed_smb.domain.collisions import check_collision, resolve_collision
-from distributed_smb.domain.entity import DestructibleBlock, Enemy
+from distributed_smb.domain.entity import DestructibleBlock, Enemy, Player
 from distributed_smb.domain.events import LevelResetEvent, PlayerDeathEvent
 from distributed_smb.domain.level import Level, TiledLevel
 from distributed_smb.domain.physics import JUMP_FORCE, MOVE_SPEED, apply_physics
-from distributed_smb.domain.world import CharacterState, WorldState
+from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.config import RESPAWN_DELAY_S
 from distributed_smb.shared.input import InputState
 
@@ -99,7 +99,7 @@ class GameEngine:
                     resolve_collision(player, platform)
 
     def spawn_player(self, player_id: str, x=100, y=100, join_index: int = 0):
-        player = CharacterState(player_id=player_id, x=x, y=y, join_index=join_index)
+        player = Player(player_id=player_id, x=x, y=y, join_index=join_index)
         self._clamp_character_to_world(player)
         self.world_state.add_player(player)
 
@@ -116,9 +116,7 @@ class GameEngine:
                         self.events.append(event)
                     resolve_collision(player, block)
 
-    def _clamp_character_to_world(
-        self, character: CharacterState, *, clamp_bottom: bool = True
-    ) -> None:
+    def _clamp_character_to_world(self, character: Player, *, clamp_bottom: bool = True) -> None:
         max_x = max(0, self.world_width - character.width)
         character.x = max(0, min(character.x, max_x))
         if clamp_bottom:
@@ -159,7 +157,7 @@ class GameEngine:
             ):
                 player.powerup_effect_expires_at = None
 
-    def _has_active_powerup_effect(self, player: CharacterState, now: float | None = None) -> bool:
+    def _has_active_powerup_effect(self, player: Player, now: float | None = None) -> bool:
         if now is None:
             now = time.time()
         if player.powerup_effect_expires_at is None:
@@ -243,7 +241,7 @@ class GameEngine:
             player.powerup_effect_expires_at = None
         self.events.append(LevelResetEvent())
 
-    def _is_head_bump(self, player: CharacterState, block: DestructibleBlock) -> bool:
+    def _is_head_bump(self, player: Player, block: DestructibleBlock) -> bool:
         previous_top = player.prev_y
         current_top = player.y
         block_bottom = block.y + block.height
@@ -267,7 +265,7 @@ class GameEngine:
                 enemy.x = enemy.right_bound - enemy.width
                 enemy.vx = -enemy.vx
 
-    def _is_stomp(self, player: CharacterState, enemy: Enemy) -> bool:
+    def _is_stomp(self, player: Player, enemy: Enemy) -> bool:
         """A stomp is a landing from above: player's feet were at/above the
         enemy's head last frame and the player is currently falling."""
         previous_bottom = player.prev_y + player.height
@@ -276,7 +274,7 @@ class GameEngine:
         )
         return horizontally_overlapping and player.vy > 0 and previous_bottom <= enemy.y + 4
 
-    def _queue_player_death(self, player: CharacterState, cause: str) -> None:
+    def _queue_player_death(self, player: Player, cause: str) -> None:
         self.events.append(PlayerDeathEvent(player_id=player.player_id, enemy_id=cause))
         self._respawn_join_index[player.player_id] = player.join_index
         self.world_state.remove_player(player.player_id)

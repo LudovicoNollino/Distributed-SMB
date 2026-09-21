@@ -4,7 +4,8 @@ import time
 from unittest.mock import patch
 
 from distributed_smb.application.node_controller import NodeController
-from distributed_smb.domain.world import CharacterState, WorldState
+from distributed_smb.domain.entity import Player
+from distributed_smb.domain.world import WorldState
 from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
 
@@ -43,12 +44,12 @@ def test_an_arriving_snapshot_updates_both_the_engine_and_the_interpolation():
     ctrl = _make_client_controller()
     ctrl._init_shadow_copies()
 
-    host_state = CharacterState(player_id=ctrl.remote_player_id, x=50, y=100)
+    host_state = Player(player_id=ctrl.remote_player_id, x=50, y=100)
     payload = ctrl.serializer.encode_message(
         _make_snapshot(seq=1, characters={ctrl.remote_player_id: host_state})
     )
     with patch(
-        "distributed_smb.network.udp_handler.UdpHandler.receive_packet_nowait",
+        "distributed_smb.network.transport.udp.UdpHandler.receive_packet_nowait",
         side_effect=[(payload, ("127.0.0.1", 9999)), None],
     ):
         ctrl._drain_snapshot_packets()
@@ -75,7 +76,7 @@ def test_the_remote_is_shown_from_the_engine_until_interpolation_has_data():
     assert ctrl.remote_player_id in display.characters  # from the engine, for now
     assert display.sequence_number == ctrl.engine.world_state.sequence_number
 
-    interpolated = CharacterState(player_id=ctrl.remote_player_id, x=150, y=100)
+    interpolated = Player(player_id=ctrl.remote_player_id, x=150, y=100)
     ctrl.shadow_copies[ctrl.remote_player_id].update(interpolated, sequence_number=1)
 
     display = ctrl._build_visual_world_state()

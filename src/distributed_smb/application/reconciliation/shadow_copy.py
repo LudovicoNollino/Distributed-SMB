@@ -10,18 +10,18 @@ import time
 from collections.abc import Callable
 from typing import Protocol, runtime_checkable
 
+from distributed_smb.domain.entity import Player
 from distributed_smb.domain.shadow_copy import ShadowCopy as DomainShadowCopy
-from distributed_smb.domain.world import CharacterState
 
 
 @runtime_checkable
 class ShadowCopyProtocol(Protocol):
     """Manages the display state for one remote entity."""
 
-    def update(self, state: CharacterState, sequence_number: int) -> None:
+    def update(self, state: Player, sequence_number: int) -> None:
         """Record a new authoritative state, ordered by the snapshot's sequence_number."""
 
-    def get_display_state(self) -> CharacterState | None:
+    def get_display_state(self) -> Player | None:
         """Return the state to render, potentially interpolated or extrapolated.
 
         Returns None if no snapshot has arrived yet for this entity.
@@ -32,12 +32,12 @@ class NoopShadowCopy:
     """Pass-through — stores the last known state and returns it unchanged."""
 
     def __init__(self) -> None:
-        self._state: CharacterState | None = None
+        self._state: Player | None = None
 
-    def update(self, state: CharacterState, sequence_number: int) -> None:
+    def update(self, state: Player, sequence_number: int) -> None:
         self._state = state
 
-    def get_display_state(self) -> CharacterState | None:
+    def get_display_state(self) -> Player | None:
         return self._state
 
 
@@ -53,12 +53,12 @@ class InterpolatedShadowCopy:
         self._time_provider = time_provider
         self._shadow_copy = shadow_copy or DomainShadowCopy()
 
-    def update(self, state: CharacterState, sequence_number: int) -> None:
+    def update(self, state: Player, sequence_number: int) -> None:
         self._shadow_copy.update(
             state,
             sequence_number=sequence_number,
             received_at=self._time_provider(),
         )
 
-    def get_display_state(self) -> CharacterState | None:
+    def get_display_state(self) -> Player | None:
         return self._shadow_copy.get_visual_state(self._time_provider())

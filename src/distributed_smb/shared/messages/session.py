@@ -99,7 +99,7 @@ class RosterUpdate:
 
 @dataclass(slots=True)
 class SessionRecreate:
-    """Sent by the promoted host to its own new lobby after M8 host migration (M9).
+    """Sent by the promoted host to its own new lobby after a host migration.
 
     Unlike SessionCreate (which generates a new session_id), SessionRecreate
     preserves the existing session_id so that recovering nodes can rejoin using

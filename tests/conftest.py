@@ -100,8 +100,8 @@ class _AckingLobbyWs:
 def no_real_lobby_relaunch(monkeypatch):
     """Promotion re-registers with the lobby on localhost from a background
     thread: fake it, and join the thread before the fake goes away."""
-    monkeypatch.setattr("distributed_smb.application.election_mixin.time.sleep", lambda s: None)
-    monkeypatch.setattr("distributed_smb.application.election_mixin.WsHandler", _AckingLobbyWs)
+    monkeypatch.setattr("distributed_smb.application.election.mixin.time.sleep", lambda s: None)
+    monkeypatch.setattr("distributed_smb.application.election.mixin.WsHandler", _AckingLobbyWs)
     yield
     for t in threading.enumerate():
         if t.name == "lobby-relaunch":

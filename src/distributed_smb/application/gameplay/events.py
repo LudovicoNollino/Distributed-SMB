@@ -4,8 +4,8 @@ import json
 import logging
 import time
 
+from distributed_smb.application.gameplay.mapper import event_to_message
 from distributed_smb.shared.config import UDP_INPUT_TIMEOUT
-from distributed_smb.shared.mappers.gameplay_mapper import event_to_message
 from distributed_smb.shared.messages.election import (
     ElectionAck,
     NewHostClaim,

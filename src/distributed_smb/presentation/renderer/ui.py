@@ -5,7 +5,7 @@ from __future__ import annotations
 import pygame
 
 from distributed_smb.application.dto import RenderCharacter, RenderFrame
-from distributed_smb.presentation.renderer_support import (
+from distributed_smb.presentation.renderer.support import (
     CHECKPOINT_TOAST_FADE_START,
     CHECKPOINT_TOAST_MS,
 )
@@ -92,7 +92,7 @@ class UiRenderer:
         body_font = pygame.font.SysFont(None, 32)
         title_surface = title_font.render("Victory!", True, (255, 230, 120))
         body_surface = body_font.render(
-            "Hai raggiunto la porta del castello",
+            "You reached the castle gate",
             True,
             (255, 255, 255),
         )

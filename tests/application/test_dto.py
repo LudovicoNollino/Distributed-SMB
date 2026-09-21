@@ -5,18 +5,17 @@ from distributed_smb.domain.entity import (
     Enemy,
     ExclusivePowerUp,
     Platform,
+    Player,
 )
 from distributed_smb.domain.level import Decoration
-from distributed_smb.domain.world import CharacterState, EnvironmentalState, WorldState
+from distributed_smb.domain.world import EnvironmentalState, WorldState
 
 
 def _world_state() -> WorldState:
     return WorldState(
         sequence_number=7,
         characters={
-            "player1": CharacterState(
-                player_id="player1", x=10.0, y=20.0, vx=1.0, vy=2.0, join_index=0
-            )
+            "player1": Player(player_id="player1", x=10.0, y=20.0, vx=1.0, vy=2.0, join_index=0)
         },
         environment=EnvironmentalState(
             destructible_blocks=[DestructibleBlock(x=1, y=2, destroyed=True)],
