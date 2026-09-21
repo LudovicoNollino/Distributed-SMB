@@ -108,12 +108,7 @@ class RosterUpdate:
 
 @dataclass(slots=True)
 class SessionRecreate:
-    """Sent by the promoted host to its own new lobby after a host migration.
-
-    Unlike SessionCreate (which generates a new session_id), SessionRecreate
-    preserves the existing session_id so that recovering nodes can rejoin using
-    the session_id stored in session_metadata.json.
-    """
+    """Sent by the promoted host to its own new lobby after a host migration."""
 
     session_id: str
     next_join_index: int

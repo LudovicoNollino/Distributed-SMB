@@ -27,14 +27,7 @@ class ElectionMixin:
     # ------------------------------------------------------------------
 
     def _send_election_message_udp(self, message, *, only_hosts: set[str] | None = None) -> None:
-        """Send an election/reconnection message directly over UDP to known
-        peers, in addition to the WS relay. The relay dies with a crashed
-        host if it was also running the relay container, which can leave
-        survivors unable to hear from each other at all (each self-elects
-        independently — split brain) — direct UDP doesn't depend on it,
-        since every peer already knows the others' UDP address from the
-        roster and keeps its own socket open regardless of who's host.
-        """
+        """Send an election message over UDP too: the WS relay may have died with the host."""
         payload = self.serializer.encode_message(message)
         for entry in self.roster.get_all_players():
             if entry.player_id == self.local_player_id:
@@ -191,22 +184,7 @@ class ElectionMixin:
         self._relaunch_thread.start()
 
     def _relaunch_lobby_for_rejoin(self) -> None:
-        """Bring lobby/game-events infrastructure back up so crashed nodes can rejoin.
-
-        Runs off the main thread deliberately: Docker container startup plus
-        the WS handshake retry loop below can take several seconds on
-        localhost and considerably longer across real, separate machines
-        (cold container pulls, network RTT). Running this synchronously
-        inside _promote_to_host() used to freeze the whole frame loop for
-        that entire window — the promoted node stopped draining UDP, so
-        surviving peers stopped receiving snapshots and falsely timed out
-        this node too, triggering a second, conflicting self-election
-        (split brain: two nodes both convinced they are the host).
-
-        Uses a local WsHandler instead of self.ws_handler until the handshake
-        finishes, so it never races with _check_for_rejoining_players()
-        polling the same handler concurrently from the main thread.
-        """
+        """Bring lobby/game-events infrastructure back up so crashed nodes can rejoin."""
         self.lobby_container_manager.start()
         self.game_event_broker.reconnect("localhost", GAME_EVENT_WS_PORT)
 

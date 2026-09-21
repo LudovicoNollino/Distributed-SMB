@@ -53,8 +53,7 @@ class GameApp:
         )
 
     def run(self) -> str:
-        """Returns "quit" or "victory" — host and client each reach "victory"
-        independently from their own local frame.victory."""
+        """Run the game loop: returns "quit", or "victory" once the overlay ends."""
         running = True
         outcome = "quit"
         victory_since: float | None = None

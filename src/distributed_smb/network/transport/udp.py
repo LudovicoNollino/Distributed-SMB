@@ -59,11 +59,7 @@ class UdpHandler:
             self._socket.sendto(payload, (remote_host, remote_port))
 
     def send_packet_nowait(self, payload: bytes, remote_host: str, remote_port: int) -> None:
-        """Send one UDP packet from the game loop thread.
-
-        If artificial_latency_ms > 0, the packet is queued and dispatched
-        after the configured delay. Pending packets are flushed on every call.
-        """
+        """Send one UDP packet from the game loop thread."""
         self.open_socket()
         if self._should_drop_packet():
             return

@@ -20,13 +20,7 @@ _serializer = Serializer()
 
 @dataclass(slots=True)
 class WsHandler:
-    """WebSocket client that bridges the async lobby server and the sync game loop.
-
-    The connection runs in a background daemon thread with its own asyncio event
-    loop. Incoming messages are decoded and placed on `inbox`; the game loop
-    reads them via `poll()` without ever blocking. Outgoing messages are sent
-    via `send()`, which is safe to call from any thread.
-    """
+    """WebSocket client that bridges the async lobby server and the sync game loop."""
 
     host: str
     port: int
@@ -41,10 +35,7 @@ class WsHandler:
         return LOBBY_WS_URL_TEMPLATE.format(host=self.host, port=self.port, path=self.path)
 
     def connect(self, timeout: float = 10.0) -> None:
-        """Open the connection in a background daemon thread.
-
-        Blocks until the handshake completes or `timeout` seconds elapse.
-        """
+        """Open the connection in a background daemon thread."""
         self._connection_error = None  # reset so retries don't see a stale error
         ready = threading.Event()
 
@@ -113,11 +104,7 @@ def connect_with_retries(
     timeout: float = 2.0,
     delay: float = 1.0,
 ) -> None:
-    """Connect to a server that may still be starting up.
-
-    A node launches its own lobby/relay containers and connects to them right
-    after, so the first attempts legitimately fail while Docker brings them up.
-    """
+    """Connect to a server that may still be starting up."""
     for attempt in range(1, attempts + 1):
         try:
             handler.connect(timeout=timeout)

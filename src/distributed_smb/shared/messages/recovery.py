@@ -1,11 +1,4 @@
-"""Host discovery and rejoin messages.
-
-UDP point-to-point messages used by a recovering node to locate the
-currently-acting host after a crash + process restart. Unlike election
-messages (WebSocket, broadcast via the relay), these travel directly
-over UDP because the recovering node has no WebSocket/lobby connection
-yet — it is, by definition, outside any session.
-"""
+"""Host discovery and rejoin messages."""
 
 from dataclasses import dataclass, field
 
@@ -15,14 +8,7 @@ from distributed_smb.shared.messages.common import MessageValidationError
 
 @dataclass(slots=True)
 class HostDiscoveryProbe:
-    """Sent by a recovering node to each cached peer IP at HOST_UDP_PORT.
-
-    Attributes:
-        session_id: Session the recovering node is trying to rejoin.
-        requester_ip: IP of the recovering node, for logging/debugging — the
-            actual reply target is the UDP source address, not this field.
-        message_type: MessageType.HOST_DISCOVERY_PROBE.
-    """
+    """Sent by a recovering node to each cached peer IP at HOST_UDP_PORT."""
 
     session_id: str
     requester_ip: str
@@ -37,13 +23,7 @@ class HostDiscoveryProbe:
 
 @dataclass(slots=True)
 class HostIdentityResponse:
-    """Reply from the current acting host confirming it is authoritative for session_id.
-
-    Attributes:
-        session_id: Echoes the probe's session_id (recovering node validates the match).
-        host_ip: IP address the recovering node should rejoin via.
-        message_type: MessageType.HOST_IDENTITY_RESPONSE.
-    """
+    """Reply from the current acting host confirming it is authoritative for session_id."""
 
     session_id: str
     host_ip: str

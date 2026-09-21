@@ -281,12 +281,7 @@ async def lobby_endpoint(ws: WebSocket) -> None:
 
 
 async def _handle_leave(session_id: str, join_index: int) -> None:
-    """Drop a participant that deliberately left and tell the others.
-
-    Driven by an explicit message rather than by the socket dropping: a lost
-    connection also happens on a crash or a host migration, where membership
-    is owned by the host and the lobby must not evict anyone.
-    """
+    """Drop a participant that deliberately left and tell the others."""
     if not lobby_manager.has_session(session_id):
         return
 

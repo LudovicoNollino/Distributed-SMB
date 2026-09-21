@@ -22,27 +22,13 @@ HOST_ROSTER_BROADCAST_INTERVAL = 120
 
 class HostGameplayMixin:
     def bootstrap_from_snapshot(self, snapshot: WorldStateSnapshot) -> None:
-        """Apply an incoming snapshot as the authoritative starting state.
-
-        Called by ElectionMixin._promote_to_host() after the election, using
-        the last snapshot stored in env_state_buffer. This preserves the
-        EnvironmentalState (destroyed blocks, collected power-ups) from the
-        moment before the old host crashed.
-
-        The snapshot's world_state is already a decoded WorldState object
-        (the serializer decodes it before constructing WorldStateSnapshot),
-        so we assign it directly to the engine without re-decoding.
-        """
+        """Apply an incoming snapshot as the authoritative starting state."""
         self.engine.world_state = snapshot.world_state
         self.last_snapshot_sequence = snapshot.sequence_number
         LOGGER.info("bootstrapped world state from snapshot seq=%d", snapshot.sequence_number)
 
     def _drain_remote_input_packets(self) -> int:
-        """Poll incoming client input packets and cache the latest valid ones.
-
-        Returns the number of input packets drained this frame, used for
-        diagnostic logging of host-side socket backlog.
-        """
+        """Poll incoming client input packets and cache the latest valid ones."""
         drained = 0
         while True:
             packet = self.udp_handler.receive_packet_nowait()
@@ -89,11 +75,7 @@ class HostGameplayMixin:
         return inputs
 
     def _send_world_state_snapshot(self) -> int:
-        """Broadcast the authoritative world state to all remote peers.
-
-        Returns the serialized payload size in bytes, used for diagnostic
-        logging of snapshot growth over a session.
-        """
+        """Broadcast the authoritative world state to all remote peers."""
         snapshot = WorldStateSnapshot(
             sequence_number=self.engine.world_state.sequence_number,
             world_state=self.engine.world_state.to_dict(),
@@ -152,12 +134,7 @@ class HostGameplayMixin:
         return self.engine.world_state
 
     def _maybe_broadcast_roster(self) -> None:
-        """Periodically publish the authoritative roster to every client.
-
-        Only the host learns about a node that rejoins mid-session; without
-        this the peers already in game never hear about it, and on the next
-        host crash each survivor sees an empty peer set and promotes itself.
-        """
+        """Periodically publish the authoritative roster to every client."""
         if self.sent_snapshots % HOST_ROSTER_BROADCAST_INTERVAL != 0:
             return
         payload = json.dumps(
@@ -173,13 +150,7 @@ class HostGameplayMixin:
         self.host_last_frame_at = now
 
     def _maybe_log_host_diagnostics(self) -> None:
-        """Periodically log host frame timing, payload size, and input backlog.
-
-        Diagnostic for investigating session-long latency growth observed on
-        the client (rtt_ms climbing from ~20ms to ~190ms over a session): if
-        the host's own frame interval grows over time, the host loop itself
-        is falling behind.
-        """
+        """Periodically log host frame timing, payload size, and input backlog."""
         if len(self.host_frame_intervals) < HOST_DIAG_LOG_INTERVAL:
             return
         intervals = self.host_frame_intervals

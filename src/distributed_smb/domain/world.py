@@ -40,9 +40,7 @@ class WorldState:
     respawn_timers: dict[str, float] = field(default_factory=dict)
 
     def load_level(self, level: Level) -> None:
-        """Deep-copies every entity: level is a reusable template kept alive
-        for mid-session resets, and gameplay mutates entities in place —
-        aliasing would leak one run's mutations into the next run's "fresh" state."""
+        """Deep-copy every entity: the level is a template reused by later runs."""
         self.environment.destructible_blocks = deepcopy(level.blocks)
         self.environment.power_ups = {
             powerup.powerup_id: powerup for powerup in deepcopy(level.powerups)

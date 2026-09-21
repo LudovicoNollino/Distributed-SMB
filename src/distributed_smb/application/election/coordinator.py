@@ -1,14 +1,4 @@
-"""Election state machine: staggered timer-based distributed host election.
-
-Implements deterministic host election via JoinIndex ordering and staggered delays.
-This avoids voting rounds and achieves consensus without a central coordinator.
-
-State transitions:
-    IDLE -> ELECTION_PENDING (start_election triggered)
-    ELECTION_PENDING -> CLAIMED (election timer expires, self-elected)
-    ELECTION_PENDING -> FOLLOWER (valid NewHostClaim from lower-indexed peer received)
-    CLAIMED -> FOLLOWER (NewHostClaim from lower-indexed peer overrides us)
-"""
+"""Election state machine: staggered timer-based distributed host election."""
 
 from dataclasses import dataclass
 from enum import Enum
@@ -39,56 +29,24 @@ class ElectionEvent:
 
 @dataclass(slots=True)
 class SelfElected(ElectionEvent):
-    """Emitted when self-election timer expires without override from lower-indexed peer.
-
-    Attributes:
-        my_ip: IP address of the newly elected host (for network communication).
-    """
+    """Emitted when self-election timer expires without override from lower-indexed peer."""
 
     my_ip: str
 
 
 @dataclass(slots=True)
 class FollowingHost(ElectionEvent):
-    """Emitted when a valid NewHostClaim received from lower-indexed peer.
-
-    Attributes:
-        claimer_ip: IP address of the elected host.
-        claimer_join_index: JoinIndex of the elected host (for tie-breaking verification).
-    """
+    """Emitted when a valid NewHostClaim received from lower-indexed peer."""
 
     claimer_ip: str
     claimer_join_index: int
 
 
 class ElectionCoordinator:
-    """Staggered timer election coordinator.
-
-    Deterministic host election:
-    - Each node waits T = T_ELECTION_BASE_S + join_index * T_ELECTION_DELTA_S before self-electing.
-    - Node with lowest JoinIndex wins (no conflicts in nominal case).
-    - JoinIndex is assigned during lobby phase and never changes (stable total ordering).
-    - If elected host becomes unresponsive, election cascades to next-lowest JoinIndex.
-
-    Attributes:
-        state: Current election state.
-        join_index: 0-based node index (stable, assigned in lobby).
-        my_ip: This node's IP address.
-        current_host_ip: IP of currently elected host (when state == FOLLOWER).
-        current_host_join_index: JoinIndex of currently elected host.
-        known_peers: Set of peer IPs known to be alive.
-        election_timer_expiry: Unix timestamp when election timer fires (None if not pending).
-    """
+    """Staggered timer election coordinator."""
 
     def __init__(self, join_index: int, my_ip: str, timeout_base_s: float, timeout_delta_s: float):
-        """Initialize the election coordinator.
-
-        Args:
-            join_index: 0-based position in the lobby join order (stable, permanent).
-            my_ip: This node's IP address.
-            timeout_base_s: T_ELECTION_BASE_S from config.
-            timeout_delta_s: T_ELECTION_DELTA_S from config.
-        """
+        """Initialize the election coordinator."""
         self.join_index = join_index
         self.my_ip = my_ip
         self.timeout_base_s = timeout_base_s
@@ -101,13 +59,7 @@ class ElectionCoordinator:
         self.election_timer_expiry: float | None = None
 
     def start_election(self, known_peers: set[str]) -> None:
-        """Begin staggered election timer.
-
-        Called when host timeout detected or cascading to next candidate.
-
-        Args:
-            known_peers: Set of peer IPs to broadcast NewHostClaim to.
-        """
+        """Begin staggered election timer."""
         self.state = ElectionState.ELECTION_PENDING
         self.known_peers = known_peers.copy()
         # Timer fires at: current_time + (T_ELECTION_BASE_S + join_index * T_ELECTION_DELTA_S)
@@ -116,26 +68,12 @@ class ElectionCoordinator:
         self.current_host_join_index = None
 
     def set_election_timer(self, current_time: float) -> None:
-        """Set the election timer to fire after the staggered delay.
-
-        Called after start_election() and before the main event loop tick.
-
-        Args:
-            current_time: Unix timestamp (typically time.time()).
-        """
+        """Set the election timer to fire after the staggered delay."""
         delay = self.timeout_base_s + self.join_index * self.timeout_delta_s
         self.election_timer_expiry = current_time + delay
 
     def tick(self, current_time: float) -> ElectionEvent | None:
-        """Process election state machine tick.
-
-        Returns:
-            SelfElected if election timer expires in ELECTION_PENDING state,
-            None if no event triggered.
-
-        Raises:
-            ValueError if election_timer_expiry not set in ELECTION_PENDING state.
-        """
+        """Process election state machine tick."""
         if self.state == ElectionState.ELECTION_PENDING:
             if self.election_timer_expiry is None:
                 raise ValueError(
@@ -148,24 +86,7 @@ class ElectionCoordinator:
         return None
 
     def on_new_host_claim(self, claimer_join_index: int, claimer_ip: str) -> ElectionEvent | None:
-        """Process incoming NewHostClaim from a peer.
-
-        Deterministic ordering: lower JoinIndex always wins. If we see a claim
-        from a peer with lower JoinIndex:
-        - We transition to FOLLOWER (we are not the elected host).
-        - No further elections happen unless this host later times out.
-
-        If we see a claim from peer with higher JoinIndex:
-        - We ignore it (we are the rightful elected host).
-
-        Args:
-            claimer_join_index: JoinIndex of the claiming peer.
-            claimer_ip: IP address of the claiming peer.
-
-        Returns:
-            FollowingHost if we transition to FOLLOWER (accept the claim),
-            None if we reject or ignore the claim.
-        """
+        """Process incoming NewHostClaim from a peer."""
         if claimer_join_index >= self.join_index:
             # Claimer has higher or equal JoinIndex: we are the rightful host, ignore.
             return None

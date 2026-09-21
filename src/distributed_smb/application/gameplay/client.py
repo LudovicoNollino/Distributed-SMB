@@ -117,16 +117,7 @@ class ClientGameplayMixin:
             self._tick_reconnection_fallback(now)
 
     def _send_host_verify_probe(self, now: float) -> None:
-        """Probe the suspected-dead host directly before trusting the local timeout.
-
-        A snapshot gap can come from a brief stall (GC pause, CPU contention
-        from other peers/containers sharing the machine, a network blip)
-        rather than an actual crash — observed in testing as a multi-second
-        game-loop freeze on an otherwise-healthy peer, immediately after a
-        migration, with no corresponding freeze on the real host. Confirming
-        via a direct probe avoids cascading into a false, conflicting
-        election off the back of that kind of transient delay.
-        """
+        """Probe the suspected-dead host directly before trusting the local timeout."""
         self._host_verify_deadline = now + HOST_VERIFY_TIMEOUT_S
         self._host_verify_next_probe = now
         self._resend_host_verify_probe(now)
@@ -166,13 +157,7 @@ class ClientGameplayMixin:
             self.timeout_watcher.reset(time.time())
 
     def _tick_reconnection_fallback(self, now: float) -> None:
-        """Fall back to a direct UDP probe if ReconnectionAck never arrives.
-
-        ReconnectionAck normally relays through the crashed host's own relay
-        container — if that container went down with the host (e.g. a clean
-        shutdown that also stops it), a following peer would wait forever.
-        RecoveryProber talks UDP directly to the claimed candidate instead.
-        """
+        """Fall back to a direct UDP probe if ReconnectionAck never arrives."""
         if self.reconnected or self._following_host_ip is None:
             return
         if now - self._following_since < RECONNECTION_FALLBACK_TIMEOUT_S:
@@ -242,14 +227,7 @@ class ClientGameplayMixin:
         self._recalibrate_prediction_lead()
 
     def _resync_environment_from_buffer(self) -> None:
-        """Realign blocks, power-ups and gates with the rest of the survivors.
-
-        reconcile() never overwrites these three from an authoritative snapshot,
-        to avoid visual pop-in when this node predicts a block break locally.
-        That also means an event lost while the old host died would leave this
-        copy diverged forever: the promoted host restores this very snapshot,
-        so applying it here puts everyone back in agreement.
-        """
+        """Realign blocks, power-ups and gates with the rest of the survivors."""
         if self.env_state_buffer is None:
             return
         last = self.env_state_buffer.get_last()
@@ -261,11 +239,7 @@ class ClientGameplayMixin:
         environment.cooperative_gates = last.world_state.environment.cooperative_gates
 
     def _repoint_roster_at(self, new_host_ip: str) -> None:
-        """Evict the crashed host and flag the elected one as host.
-
-        Otherwise _known_client_peers() would still count the dead host as a
-        peer, and a future election would evict the wrong entry.
-        """
+        """Evict the crashed host and flag the elected one as host."""
         old_host = self.roster.get_host()
         if old_host is not None:
             self._evict_player(old_host.player_id)
@@ -276,9 +250,7 @@ class ClientGameplayMixin:
             self.roster.promote_host(new_host.player_id)
 
     def _reset_election_state(self) -> None:
-        """Arm the failure detector again: election_triggered stays True after
-        following a claim, which would swallow the next timeout check and blind
-        this node to a second crash."""
+        """Re-arm the failure detector so a second host crash is noticed as well."""
         self.election_triggered = False
         self._pending_election_acks = set()
         self._election_claim_deadline = 0.0
@@ -287,9 +259,7 @@ class ClientGameplayMixin:
         self._host_verify_deadline = 0.0
 
     def _recalibrate_prediction_lead(self) -> None:
-        """The baseline was frozen against the old host's RTT; the new host may
-        sit on another machine, and a permanent deviation would show up as
-        sustained corrections and visible jitter."""
+        """Restart the RTT calibration: the new host may sit on another machine."""
         self.prediction_lead_baseline = 0.0
         self.prediction_lead_calibration_remaining = PREDICTION_LEAD_CALIBRATION_FRAMES
         self.visual_correction_offset = (0.0, 0.0)
@@ -410,12 +380,7 @@ class ClientGameplayMixin:
         self.client_frame_intervals.clear()
 
     def _drain_snapshot_packets(self) -> None:
-        """Poll incoming snapshots, reconcile predicted state, update shadow copies.
-
-        Also dispatches election/reconnection messages arriving here — these
-        travel over direct UDP (in addition to the WS relay) so surviving
-        peers can coordinate a host migration even if the relay is down.
-        """
+        """Poll incoming snapshots, reconcile predicted state, update shadow copies."""
         now = time.time()
         while True:
             packet = self.udp_handler.receive_packet_nowait()

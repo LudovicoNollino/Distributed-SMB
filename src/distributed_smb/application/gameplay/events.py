@@ -124,13 +124,7 @@ class GameEventMixin:
                 self._merge_roster(msg.roster)
 
     def _merge_roster(self, roster) -> None:
-        """Learn about peers that joined after this node built its own roster.
-
-        A node that rejoins mid-session only gets the roster the lobby knows,
-        and peers already in game are never told about it — so on the next host
-        crash each one sees no peers and promotes itself. Merge is additive:
-        evictions travel via PlayerLeft and must not be undone here.
-        """
+        """Learn about peers that joined after this node built its own roster."""
         known = {e.join_index for e in self.roster.get_all_players()}
         for entry in roster.get_all_players():
             if entry.join_index in known or entry.player_id == self.local_player_id:

@@ -36,10 +36,7 @@ class DiscoveryService:
         lobby_port: int,
         allowed_ips: Iterable[str] | None = None,
     ) -> None:
-        """Listen for discovery queries and respond with lobby_port.
-
-        The client learns host_ip from the UDP packet source address.
-        """
+        """Listen for discovery queries and respond with lobby_port."""
         self._running = True
         self._allowed_ips = set(allowed_ips) if allowed_ips is not None else None
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -84,15 +81,7 @@ class DiscoveryService:
         self._thread.start()
 
     def discover(self, session_id: str, timeout: float = 5.0) -> tuple[str, int]:
-        """Broadcast a discovery query and return (host_ip, lobby_port).
-
-        The query is sent from each local IPv4 interface in turn (one socket
-        per attempt, used for both send and receive so the host's reply
-        reaches the same port the query was sent from). This avoids losing
-        the broadcast on machines where a virtual adapter (e.g. Docker
-        Desktop's vEthernet) has a lower-metric default route than the real
-        LAN NIC.
-        """
+        """Broadcast a discovery query and return (host_ip, lobby_port)."""
         query = f"WHO {session_id}".encode()
         local_ips = _local_ipv4_addresses() or ["0.0.0.0"]
         per_ip_timeout = max(timeout / len(local_ips), 0.5)

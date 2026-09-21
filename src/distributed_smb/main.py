@@ -74,12 +74,7 @@ def build_controller(
 
 
 def _detect_local_ip() -> str:
-    """Best-effort detection of this machine's LAN-facing IP address.
-
-    Opens a UDP socket toward a public address — no packet is actually sent,
-    the OS just resolves which local interface the route would use. Falls
-    back to DEFAULT_HOST on machines with no route (e.g. fully offline).
-    """
+    """Best-effort detection of this machine's LAN-facing IP address."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         try:
             sock.connect(("8.8.8.8", 80))
@@ -206,12 +201,7 @@ def _try_recover_session(
 
 @dataclass
 class _LobbyRunner:
-    """Drives the lobby screen and the transition into gameplay.
-
-    Holds the state the three steps share — including the screen, which is
-    replaced by a fresh one every time the players return to the lobby after
-    a victory.
-    """
+    """Drives the lobby screen and the transition into gameplay."""
 
     controller: NodeController
     screen: LobbyScreen
@@ -241,8 +231,7 @@ class _LobbyRunner:
         delete_session_metadata()
 
     def enter_and_transition(self, *, is_replay: bool) -> bool:
-        """Run lobby_phase()/replay_lobby_phase() plus the start
-        transition. Returns False if main() should return early."""
+        """Run lobby_phase()/replay_lobby_phase() plus the start transition."""
         try:
             if is_replay:
                 self.controller.replay_lobby_phase(
@@ -299,9 +288,7 @@ def _point_client_at(controller: NodeController, host_ip: str | None) -> None:
 def _prompt_client_join(
     lobby_screen: LobbyScreen, *, use_discovery: bool, host_ip: str | None, session_id: str
 ) -> tuple[str, str | None] | None:
-    """Ask the player what to join. Returns (session_id, host_ip), or None if
-    they cancelled. With discovery on, only the session ID is asked: the host
-    address is resolved over the LAN."""
+    """Ask what to join: (session_id, host_ip), or None if the player cancelled."""
     if use_discovery:
         joined_session_id = lobby_screen.prompt_session_id(initial_session_id=session_id)
         return None if joined_session_id is None else (joined_session_id, None)

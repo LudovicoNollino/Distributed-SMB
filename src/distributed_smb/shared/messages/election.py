@@ -1,7 +1,4 @@
-"""Election and host migration messages.
-
-WebSocket peer-to-peer messages broadcast to all known peers during host election.
-"""
+"""Election and host migration messages."""
 
 from dataclasses import dataclass, field
 
@@ -11,17 +8,7 @@ from distributed_smb.shared.messages.common import MessageValidationError
 
 @dataclass(slots=True)
 class NewHostClaim:
-    """Broadcast peer-to-peer: node claims to be the new host.
-
-    Sent when a node's election timer expires (or cascades to it after previous
-    host became unresponsive). All peers receive this claim and transition to FOLLOWER state.
-
-    Attributes:
-        claimer_ip: IP address of the node claiming to be host.
-        claimer_join_index: JoinIndex of the claimer (for deterministic ordering verification).
-        session_id: Session ID to prevent cross-session claim confusion.
-        message_type: MessageType.NEW_HOST_CLAIM.
-    """
+    """Broadcast peer-to-peer: node claims to be the new host."""
 
     claimer_ip: str
     claimer_join_index: int
@@ -39,16 +26,7 @@ class NewHostClaim:
 
 @dataclass(slots=True)
 class ElectionAck:
-    """Unicast reply to NewHostClaim: peer acknowledges the claim.
-
-    Sent by peers in response to NewHostClaim to confirm they received and accepted
-    the host election. Claimer uses these ACKs to verify quorum and confirm host election.
-
-    Attributes:
-        from_ip: IP address of the peer sending this ACK.
-        session_id: Session ID to match against the NewHostClaim.
-        message_type: MessageType.ELECTION_ACK.
-    """
+    """Unicast reply to NewHostClaim: peer acknowledges the claim."""
 
     from_ip: str
     session_id: str
@@ -63,18 +41,7 @@ class ElectionAck:
 
 @dataclass(slots=True)
 class ReconnectionAck:
-    """Sent by the newly promoted host to each surviving client.
-
-    Carries the connection details clients need to resume the session:
-    the new host's IP, the UDP port to send PlayerInputPackets to, and
-    the WebSocket port for game events.
-
-    Attributes:
-        new_host_ip: IP address of the newly elected host.
-        udp_port: UDP port where the new host listens for PlayerInputPackets.
-        game_events_port: WebSocket port for the GameEventServer on the new host.
-        session_id: Session identifier to prevent cross-session confusion.
-    """
+    """Sent by the newly promoted host to each surviving client."""
 
     new_host_ip: str
     udp_port: int

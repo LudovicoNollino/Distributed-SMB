@@ -1,14 +1,4 @@
-"""Buffer for the most recent WorldStateSnapshot received via UDP.
-
-Keeps the last snapshot seen by the node (host or client). When a host
-timeout is detected, this buffer holds the state immediately preceding the
-crash, which the newly elected host applies as its authoritative starting
-point via bootstrap_from_snapshot().
-
-No explicit state transfer protocol is needed: each client already has an
-up-to-date copy of the world via UDP snapshots, so the buffer is simply
-the last packet received.
-"""
+"""Buffer for the most recent WorldStateSnapshot received via UDP."""
 
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
 

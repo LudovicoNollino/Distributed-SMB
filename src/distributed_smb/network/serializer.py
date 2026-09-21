@@ -213,11 +213,7 @@ class Serializer:
     # ------------------------------------------------------------------
 
     def encode_ws_message(self, payload: WsMessage) -> dict:
-        """Encode a lobby coordination message to a JSON-compatible dict.
-
-        The returned dict is sent as-is over the WebSocket connection; the
-        WebSocket layer is responsible for calling json.dumps on it.
-        """
+        """Encode a lobby coordination message to a JSON-compatible dict."""
         return asdict(payload)
 
     def decode_ws_message(self, data: dict) -> WsMessage:

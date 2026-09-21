@@ -227,8 +227,7 @@ class GameEngine:
                     return
 
     def reset_for_new_run(self) -> None:
-        """Queues a LevelResetEvent so clients, which predict blocks/power-ups/
-        gates locally, discard their stale local copies too."""
+        """Reload the level and queue a LevelResetEvent so clients drop stale copies."""
         self.world_state.load_level(self._level)
         self._respawn_join_index.clear()
         self.world_state.respawn_timers.clear()
@@ -266,8 +265,7 @@ class GameEngine:
                 enemy.vx = -enemy.vx
 
     def _is_stomp(self, player: Player, enemy: Enemy) -> bool:
-        """A stomp is a landing from above: player's feet were at/above the
-        enemy's head last frame and the player is currently falling."""
+        """A stomp is a landing from above: feet over the enemy's head, falling."""
         previous_bottom = player.prev_y + player.height
         horizontally_overlapping = (
             player.x < enemy.x + enemy.width and player.x + player.width > enemy.x
@@ -298,9 +296,7 @@ class GameEngine:
                 self._queue_player_death(player, enemy.enemy_id)
 
     def _handle_void_deaths(self) -> None:
-        """Kill players that fell past the level's floor through a pit,
-        before _clamp_players_to_world() would otherwise silently arrest
-        the fall at the world's bottom edge."""
+        """Kill players that fell into a pit before the world clamp stops the fall."""
         if not self.is_authoritative:
             return
         for player in list(self.world_state.characters.values()):
@@ -309,12 +305,7 @@ class GameEngine:
             self._queue_player_death(player, VOID_DEATH_CAUSE)
 
     def spawn_position_for(self, join_index: int) -> tuple[int, int]:
-        """Spawn point for a given join_index, from the level's TMX SpawnPoints.
-
-        Shared by respawn-after-death and by application's initial join spawn
-        (node_controller._spawn_position_for) so both use the same
-        level-authored positions instead of two independent formulas.
-        """
+        """Spawn point for a given join_index, from the level's TMX SpawnPoints."""
         if not self.spawn_points:
             return 100, 100
         point = self.spawn_points[join_index % len(self.spawn_points)]

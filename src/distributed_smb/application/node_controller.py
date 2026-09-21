@@ -254,8 +254,7 @@ class NodeController(
         )
 
     def run(self) -> str | bool:
-        """Returns "quit"/"victory" (see GameApp.run()), or False if the
-        presentation runtime module isn't available."""
+        """Run the pygame app: returns "quit" or "victory", or False without a GUI."""
         if not self.is_bootstrapped:
             self.bootstrap()
 
@@ -359,12 +358,7 @@ class NodeController(
         )
 
     def _spawn_position_for(self, join_index: int) -> tuple[int, int]:
-        """Return a stable spawn point determined by join order (0-based).
-
-        Delegates to the domain engine, which reads the level's TMX
-        SpawnPoints — the same source used for respawn-after-death, so
-        initial join and respawn no longer disagree on where the ground is.
-        """
+        """Return a stable spawn point determined by join order (0-based)."""
         return self.engine.spawn_position_for(join_index)
 
     def _rebuild_udp_as_host(self) -> None:
@@ -373,17 +367,7 @@ class NodeController(
         self.udp_handler = UdpHandler(host="0.0.0.0", port=HOST_UDP_PORT)
 
     def _reconnect_game_event_handler(self, host: str, port: int, path: str) -> None:
-        """Replace the WebSocket event handler with a new connection to the given endpoint.
-
-        A single short attempt, not a blocking retry loop: this runs
-        synchronously inside a client's per-frame processing (called from
-        _on_reconnection_ack), so sleeping here would freeze the whole game
-        loop — including the local player's own input sending — for
-        however long the relay takes to become reachable. WsHandler.connect()
-        starts its background thread regardless of whether this call times
-        out, so a slow-starting relay still finishes connecting on its own;
-        we just don't block the frame waiting for it.
-        """
+        """Replace the WebSocket event handler with a new connection to the given endpoint."""
         self.game_event_handler.close()
         self.game_event_handler = WsHandler(host=host, port=port, path=path)
         try:
@@ -396,16 +380,7 @@ class NodeController(
             )
 
     def _reconnect_lobby_ws_handler(self, host: str) -> None:
-        """Point the lobby WS connection at the new host after a migration.
-
-        _on_reconnection_ack() already redirects UDP and the game-events
-        channel, but the lobby channel was left dangling on the crashed
-        host — it dies (often silently) once that host's lobby container
-        stops, and nothing ever reconnected it afterwards.
-
-        Single short attempt, same reasoning as _reconnect_game_event_handler:
-        this must not block the client's per-frame loop.
-        """
+        """Point the lobby WS connection at the new host after a migration."""
         self.ws_handler.close()
         self._make_lobby_ws_client(host, LOBBY_WS_PORT)
         try:

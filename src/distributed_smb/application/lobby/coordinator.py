@@ -78,8 +78,7 @@ class LobbyMixin:
         on_update: LobbyUpdateCallback | None = None,
         start_requested: StartRequestedCallback | None = None,
     ) -> GlobalRoster:
-        """Wait for the host to start a new run, reusing the existing session
-        instead of recreating it — unlike lobby_phase()."""
+        """Wait for a new run inside the existing session, without recreating it."""
         self.lifecycle.move_to_lobby()
         self._notify_lobby_update("Waiting for players", on_update)
         if self.role is PlayerRole.HOST:
@@ -126,12 +125,7 @@ class LobbyMixin:
         *,
         adopt_session_id: bool = False,
     ) -> None:
-        """Block until the host starts the game, keeping the roster up to date.
-
-        The wait has no deadline — the players decide when to start — so the
-        only ways out are the GameStart, the host closing the room, or
-        on_update returning False (the player closed or left the screen).
-        """
+        """Block until the host starts the game, keeping the roster up to date."""
         while True:
             msg = self.ws_handler.poll()
             if isinstance(msg, RosterUpdate):
@@ -147,12 +141,7 @@ class LobbyMixin:
             time.sleep(0.05)
 
     def leave_lobby(self) -> None:
-        """Tell the lobby this node is leaving, so the others drop it from the roster.
-
-        Announced explicitly instead of letting the socket drop: a lost
-        connection also happens on a crash or a host migration, where the
-        lobby must not evict anyone.
-        """
+        """Tell the lobby this node is leaving, so the others drop it from the roster."""
         if not self.session_id:
             return
         try:

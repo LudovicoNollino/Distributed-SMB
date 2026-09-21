@@ -1,10 +1,4 @@
-"""ShadowCopy protocol and implementations.
-
-ShadowCopy smooths the visual representation of remote entities between
-authoritative snapshots. Each remote player gets its own ShadowCopy
-instance, initialised after lobby and updated on every snapshot arrival.
-
-"""
+"""ShadowCopy protocol and implementations."""
 
 import time
 from collections.abc import Callable
@@ -22,10 +16,7 @@ class ShadowCopyProtocol(Protocol):
         """Record a new authoritative state, ordered by the snapshot's sequence_number."""
 
     def get_display_state(self) -> Player | None:
-        """Return the state to render, potentially interpolated or extrapolated.
-
-        Returns None if no snapshot has arrived yet for this entity.
-        """
+        """Return the state to render, potentially interpolated or extrapolated."""
 
 
 class NoopShadowCopy:
