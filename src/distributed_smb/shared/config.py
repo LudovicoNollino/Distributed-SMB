@@ -108,13 +108,10 @@ VICTORY_OVERLAY_DURATION_S = 3.0
 
 # INPUT_HISTORY_SIZE: number of frames kept in the circular input buffer for
 # post-rollback replay. At 60 fps this covers 1 second of history, which is
-# more than enough for any realistic LAN round-trip time.
+# more than enough for any realistic LAN round-trip time — and, being a
+# bounded buffer, it is also the hard cap on how many frames a single
+# reconciliation can replay.
 INPUT_HISTORY_SIZE: int = 60
-
-# MAX_ROLLBACK_FRAMES: hard cap on how many frames can be replayed in a single
-# reconciliation step. Prevents unbounded CPU spikes if the host goes silent
-# for a long time and then sends a very old authoritative snapshot.
-MAX_ROLLBACK_FRAMES: int = 30
 
 # PREDICTION_LEAD_EWMA_ALPHA: smoothing factor used during the calibration
 # window (see PREDICTION_LEAD_CALIBRATION_FRAMES) to settle the prediction

@@ -20,11 +20,10 @@ class GameApp:
     width: int = WINDOW_WIDTH
     height: int = WINDOW_HEIGHT
     fps: int = 60
-    max_frame_dt: float = 0.05
     local_player_id: str = "player1"
     input_handler: InputHandler = field(default_factory=InputHandler)
     renderer: Renderer = field(default_factory=Renderer)
-    frame_handler: Callable[[float, InputState], RenderFrame] | None = None
+    frame_handler: Callable[[InputState], RenderFrame] | None = None
     time_provider: Callable[[], float] = time.monotonic
 
     def __post_init__(self) -> None:
@@ -60,11 +59,11 @@ class GameApp:
         outcome = "quit"
         victory_since: float | None = None
         while running:
-            dt = min(self.clock.tick(self.fps) / 1000, self.max_frame_dt)
+            self.clock.tick(self.fps)  # caps the frame rate; the simulation step is fixed
             if self._should_quit():
                 break
             local_input = self.input_handler.read_input()
-            frame = self.frame_handler(dt, local_input)
+            frame = self.frame_handler(local_input)
             self._update_window_caption(frame)
             self.renderer.render(screen=self.screen, frame=frame)
 

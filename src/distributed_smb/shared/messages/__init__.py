@@ -12,6 +12,7 @@ from distributed_smb.shared.messages.session import (
     SessionCreated,
     SessionJoin,
     SessionJoined,
+    SessionJoinRejected,
 )
 from distributed_smb.shared.messages.sync import InitialStateSync
 
@@ -21,6 +22,7 @@ __all__ = [
     "SessionJoin",
     "SessionCreated",
     "SessionJoined",
+    "SessionJoinRejected",
     "GameStart",
     "InitialStateSync",
     "RosterUpdate",

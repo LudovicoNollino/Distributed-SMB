@@ -45,13 +45,13 @@ CLIENT_DIAG_LOG_INTERVAL = 120
 
 
 class ClientGameplayMixin:
-    def _process_client_frame(self, dt: float, local_input: InputState) -> object:
+    def _process_client_frame(self, local_input: InputState) -> object:
         """Run one client frame: send input, predict, tick, reconcile, drain events."""
         self._ensure_election_components()
         self._record_client_frame_interval()
         self._drain_lobby_messages()
         self._send_input_packet(local_input)
-        self._run_predicted_ticks(dt, local_input)
+        self._run_predicted_ticks(local_input)
         pre_reconcile_player = self.engine.world_state.get_player(self.local_player_id)
         pre_reconcile_pos = (
             (pre_reconcile_player.x, pre_reconcile_player.y)
@@ -312,7 +312,7 @@ class ClientGameplayMixin:
     # Prediction and reconciliation
     # ------------------------------------------------------------------
 
-    def _run_predicted_ticks(self, dt: float, local_input: InputState) -> None:
+    def _run_predicted_ticks(self, local_input: InputState) -> None:
         """Predict and tick the engine, applying any pending drift correction."""
         ticks = 1 + self.pending_tick_adjustment
         self.pending_tick_adjustment = 0

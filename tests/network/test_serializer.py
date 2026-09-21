@@ -34,6 +34,7 @@ from distributed_smb.shared.messages.session import (
     SessionCreated,
     SessionJoin,
     SessionJoined,
+    SessionJoinRejected,
     SessionLeave,
     SessionRecreate,
 )
@@ -55,6 +56,7 @@ WS_MESSAGES = [
     SessionCreated(session_id="abc123", join_index=1),
     SessionJoin(session_id="abc123", player_id="player2", ip="10.0.0.2", port=50011),
     SessionJoined(join_index=2),
+    SessionJoinRejected(session_id="abc123", reason="The session already has 4 players"),
     SessionRecreate(
         session_id="abc123",
         next_join_index=3,

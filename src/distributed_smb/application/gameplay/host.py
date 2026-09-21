@@ -129,7 +129,7 @@ class HostGameplayMixin:
             self.ws_handler.send(sync)
             LOGGER.info("rejoin: sent InitialStateSync to %d rejoining player(s)", len(new_entries))
 
-    def _process_host_frame(self, dt: float, local_input: InputState) -> object:
+    def _process_host_frame(self, local_input: InputState) -> object:
         """Run one authoritative host frame: drain inputs, tick, broadcast snapshot."""
         self._record_host_frame_interval()
         self._check_for_rejoining_players()

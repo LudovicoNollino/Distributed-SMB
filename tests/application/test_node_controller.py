@@ -55,7 +55,7 @@ def test_client_frame_sends_one_input_and_enters_the_game():
     controller = NodeController().bootstrap(role=PlayerRole.CLIENT)
     controller.udp_handler = FakeUdpHandler()
 
-    controller.process_frame(TICK_INTERVAL, InputState(right=True))
+    controller.process_frame(InputState(right=True))
 
     assert controller.input_sequence_number == 1
     assert controller.lifecycle.state is NodeState.IN_GAME
@@ -116,7 +116,7 @@ def test_the_view_shows_the_prediction_and_never_mutates_the_authoritative_state
     controller.udp_handler = FakeUdpHandler(payload)
     controller.time_provider = lambda: 10.0
 
-    visual_world = controller.process_frame(TICK_INTERVAL, InputState(right=True))
+    visual_world = controller.process_frame(InputState(right=True))
 
     assert visual_world.characters[local_pid].x > authoritative_world.characters[local_pid].x
     assert (

@@ -235,15 +235,15 @@ class NodeController(
         )
         return self
 
-    def process_frame(self, dt: float, local_input: InputState) -> RenderFrame:
+    def process_frame(self, local_input: InputState) -> RenderFrame:
         """Advance one frame according to the current runtime role."""
         if not self.lifecycle.is_started:
             self.lifecycle.move_to_game()
         self.udp_handler.open_socket()
         if self.role is PlayerRole.HOST:
-            world_state = self._process_host_frame(dt, local_input)
+            world_state = self._process_host_frame(local_input)
         else:
-            world_state = self._process_client_frame(dt, local_input)
+            world_state = self._process_client_frame(local_input)
         return build_render_frame(
             world_state=world_state,
             platforms=self.engine.platforms,

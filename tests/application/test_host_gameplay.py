@@ -127,8 +127,8 @@ def test_a_rejoining_player_is_added_once_however_often_the_lobby_says_so():
 
 
 def test_process_host_frame_ticks_engine_at_fixed_interval(monkeypatch):
-    """Physics scales with dt, so host and client must integrate every tick by
-    the same fixed amount or the replayed positions diverge."""
+    """Physics scales with the step, so host and client must integrate every
+    tick by the same fixed amount or the replayed positions diverge."""
     controller = NodeController()
     controller.local_player_id = "player1"
     controller.udp_handler = FakeUdpHandler([])
@@ -143,6 +143,6 @@ def test_process_host_frame_ticks_engine_at_fixed_interval(monkeypatch):
 
     monkeypatch.setattr(GameEngine, "tick", spy_tick)
 
-    controller._process_host_frame(0.2, InputState())
+    controller._process_host_frame(InputState())
 
     assert recorded_dts == [TICK_INTERVAL]

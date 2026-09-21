@@ -71,6 +71,14 @@ class SessionClosedSchema(BaseModel):
     message_type: str = Field(default="session_closed")
 
 
+class SessionJoinRejectedSchema(BaseModel):
+    """Schema for WebSocket SessionJoinRejected message."""
+
+    session_id: str = Field(..., min_length=1)
+    reason: str = Field(..., min_length=1)
+    message_type: str = Field(default="session_join_rejected")
+
+
 class SessionJoinedSchema(BaseModel):
     """Schema for WebSocket SessionJoined message."""
 

@@ -50,6 +50,7 @@ class MessageType(StrEnum):
     SESSION_JOINED = "session_joined"
     ROSTER_UPDATE = "roster_update"
     SESSION_CLOSED = "session_closed"
+    SESSION_JOIN_REJECTED = "session_join_rejected"
 
     # WebSocket — election and host migration
     NEW_HOST_CLAIM = "new_host_claim"

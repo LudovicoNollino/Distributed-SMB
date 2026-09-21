@@ -24,6 +24,7 @@ from distributed_smb.shared.messages.session import (
     SessionCreated,
     SessionJoin,
     SessionJoined,
+    SessionJoinRejected,
     SessionLeave,
 )
 from distributed_smb.shared.roster import GlobalRoster
@@ -40,6 +41,10 @@ class LobbyCancelledError(RuntimeError):
 
 class SessionClosedError(RuntimeError):
     """Raised when the host leaves the lobby and the room is dismissed."""
+
+
+class SessionJoinRejectedError(RuntimeError):
+    """Raised when the lobby refuses this node, e.g. the session is full."""
 
 
 class LobbyMixin:
@@ -278,6 +283,8 @@ class LobbyMixin:
                 continue
             if isinstance(msg, RosterUpdate):
                 self.roster = msg.roster
+            if isinstance(msg, SessionJoinRejected):
+                raise SessionJoinRejectedError(msg.reason)
             if isinstance(msg, expected_type):
                 return msg
         raise TimeoutError(f"Lobby timeout waiting for {expected_type.__name__}")

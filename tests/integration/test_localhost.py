@@ -13,7 +13,6 @@ from distributed_smb.shared.enums import PlayerRole
 from distributed_smb.shared.input import InputState
 
 TEST_WS_PORT = 59300
-FRAME_DT = 1 / 60
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -51,9 +50,9 @@ def test_client_input_moves_its_player_on_the_host_over_udp(run_lobby_pair):
     initial_x = host.engine.world_state.characters["player2"].x
 
     for _ in range(20):
-        client.process_frame(FRAME_DT, InputState(right=True))
+        client.process_frame(InputState(right=True))
         time.sleep(0.02)
-        host.process_frame(FRAME_DT, InputState())
+        host.process_frame(InputState())
         time.sleep(0.02)
 
     host.udp_handler.close_socket()

@@ -5,8 +5,12 @@ import logging
 import socket
 import threading
 import time
+from dataclasses import dataclass
 
-from distributed_smb.application.lobby.coordinator import SessionClosedError
+from distributed_smb.application.lobby.coordinator import (
+    SessionClosedError,
+    SessionJoinRejectedError,
+)
 from distributed_smb.application.node_controller import LobbyCancelledError, NodeController
 from distributed_smb.application.recovery.prober import RecoveryProber
 from distributed_smb.network.discovery import DiscoveryService
@@ -200,6 +204,92 @@ def _try_recover_session(
             screen.close()
 
 
+@dataclass
+class _LobbyRunner:
+    """Drives the lobby screen and the transition into gameplay.
+
+    Holds the state the three steps share — including the screen, which is
+    replaced by a fresh one every time the players return to the lobby after
+    a victory.
+    """
+
+    controller: NodeController
+    screen: LobbyScreen
+    session_id: str
+    startup_role: PlayerRole
+
+    def on_update(self, status: str, current_session_id: str, roster) -> bool:
+        # self.controller.role, not the startup role: a node promoted mid-session
+        # returns to the lobby as host, and only the host is offered Start.
+        return self.screen.render(
+            role=self.controller.role,
+            status=status,
+            session_id=current_session_id or self.session_id,
+            roster=roster,
+        )
+
+    def teardown(self) -> None:
+        self.controller.leave_lobby()
+        self.controller.ws_handler.close()
+        self.controller.game_event_handler.close()
+        self.controller.udp_handler.close_socket()
+        # Only the host owns the containers — a leaving client must not stop
+        # the lobby/relay the others are still using (same machine, shared
+        # container names; see LobbyContainerManager).
+        if self.controller.role is PlayerRole.HOST:
+            self.controller.lobby_container_manager.stop()
+        delete_session_metadata()
+
+    def enter_and_transition(self, *, is_replay: bool) -> bool:
+        """Run lobby_phase()/replay_lobby_phase() plus the start
+        transition. Returns False if main() should return early."""
+        try:
+            if is_replay:
+                self.controller.replay_lobby_phase(
+                    on_update=self.on_update,
+                    start_requested=lambda: self.screen.start_requested,
+                )
+            else:
+                self.controller.lobby_phase(
+                    session_id=self.session_id,
+                    on_update=self.on_update,
+                    start_requested=lambda: self.screen.start_requested,
+                )
+                if self.startup_role is PlayerRole.CLIENT:
+                    self.controller.game_event_handler.connect()
+            if not self.screen.play_game_start_transition(
+                role=self.controller.role,
+                roster=self.controller.roster,
+            ):
+                logging.info("Gameplay start cancelled during transition")
+                self.teardown()
+                return False
+        except LobbyCancelledError:
+            self.teardown()
+            if self.screen.leave_requested and not self.screen.is_closed:
+                logging.info("Left the lobby — returning to the main menu")
+                raise ReturnToMenu from None
+            logging.info("Lobby closed before game start")
+            return False
+        except SessionJoinRejectedError as exc:
+            logging.info("Lobby refused the join: %s", exc)
+            self.teardown()
+            self.screen.show_error(title="Cannot join this session", message=str(exc))
+            raise ReturnToMenu from None
+        except SessionClosedError:
+            logging.info("The host left the lobby — returning to the main menu")
+            self.teardown()
+            raise ReturnToMenu from None
+        except Exception as exc:
+            logging.exception("Lobby failed before game start")
+            self.teardown()
+            self.screen.show_error(title="Lobby connection failed", message=str(exc))
+            return False
+        finally:
+            self.screen.close()
+        return True
+
+
 def _point_client_at(controller: NodeController, host_ip: str | None) -> None:
     """Without discovery the client is told the host address up front."""
     controller.remote_host = host_ip or DEFAULT_HOST
@@ -277,80 +367,20 @@ def main(
             session_id=session_id,
             roster=controller.roster,
         )
+        runner = _LobbyRunner(
+            controller=controller,
+            screen=lobby_screen,
+            session_id=session_id,
+            startup_role=role,
+        )
 
-        def update_lobby_screen(status: str, current_session_id: str, roster) -> bool:
-            # controller.role, not the startup role: a node promoted mid-session
-            # returns to the lobby as host, and only the host is offered Start.
-            return lobby_screen.render(
-                role=controller.role,
-                status=status,
-                session_id=current_session_id or session_id,
-                roster=roster,
-            )
-
-        def teardown() -> None:
-            controller.leave_lobby()
-            controller.ws_handler.close()
-            controller.game_event_handler.close()
-            controller.udp_handler.close_socket()
-            # Only the host owns the containers — a leaving client must not stop
-            # the lobby/relay the others are still using (same machine, shared
-            # container names; see LobbyContainerManager).
-            if controller.role is PlayerRole.HOST:
-                controller.lobby_container_manager.stop()
-            delete_session_metadata()
-
-        def enter_lobby_and_transition(*, is_replay: bool) -> bool:
-            """Run lobby_phase()/replay_lobby_phase() plus the start
-            transition. Returns False if main() should return early."""
-            try:
-                if is_replay:
-                    controller.replay_lobby_phase(
-                        on_update=update_lobby_screen,
-                        start_requested=lambda: lobby_screen.start_requested,
-                    )
-                else:
-                    controller.lobby_phase(
-                        session_id=session_id,
-                        on_update=update_lobby_screen,
-                        start_requested=lambda: lobby_screen.start_requested,
-                    )
-                    if role is PlayerRole.CLIENT:
-                        controller.game_event_handler.connect()
-                if not lobby_screen.play_game_start_transition(
-                    role=controller.role,
-                    roster=controller.roster,
-                ):
-                    logging.info("Gameplay start cancelled during transition")
-                    teardown()
-                    return False
-            except LobbyCancelledError:
-                teardown()
-                if lobby_screen.leave_requested and not lobby_screen.is_closed:
-                    logging.info("Left the lobby — returning to the main menu")
-                    raise ReturnToMenu from None
-                logging.info("Lobby closed before game start")
-                return False
-            except SessionClosedError:
-                logging.info("The host left the lobby — returning to the main menu")
-                teardown()
-                raise ReturnToMenu from None
-            except Exception as exc:
-                logging.exception("Lobby failed before game start")
-                teardown()
-                lobby_screen.show_error(title="Lobby connection failed", message=str(exc))
-                return False
-            finally:
-                lobby_screen.close()
-            return True
-
-        if not enter_lobby_and_transition(is_replay=False):
+        if not runner.enter_and_transition(is_replay=False):
             return controller
 
         outcome = controller.run()
         while outcome == "victory":
-            lobby_screen = LobbyScreen()
-            if not enter_lobby_and_transition(is_replay=True):
+            runner.screen = LobbyScreen()
+            if not runner.enter_and_transition(is_replay=True):
                 return controller
             outcome = controller.run()
 

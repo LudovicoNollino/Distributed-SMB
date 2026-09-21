@@ -49,6 +49,7 @@ from distributed_smb.shared.messages.schemas import (
     SessionCreatedSchema,
     SessionCreateSchema,
     SessionJoinedSchema,
+    SessionJoinRejectedSchema,
     SessionJoinSchema,
     SessionLeaveSchema,
     SessionRecreateSchema,
@@ -63,6 +64,7 @@ from distributed_smb.shared.messages.session import (
     SessionCreated,
     SessionJoin,
     SessionJoined,
+    SessionJoinRejected,
     SessionLeave,
     SessionRecreate,
 )
@@ -78,6 +80,7 @@ WsMessage = Union[
     SessionRecreate,
     SessionClosed,
     SessionLeave,
+    SessionJoinRejected,
     RosterUpdate,
     GameStart,
     InitialStateSync,
@@ -266,6 +269,10 @@ class Serializer:
             if message_type == MessageType.SESSION_CLOSED:
                 validated = SessionClosedSchema(**data)
                 return SessionClosed(session_id=validated.session_id)
+
+            if message_type == MessageType.SESSION_JOIN_REJECTED:
+                validated = SessionJoinRejectedSchema(**data)
+                return SessionJoinRejected(session_id=validated.session_id, reason=validated.reason)
 
             if message_type == MessageType.SESSION_JOINED:
                 validated = SessionJoinedSchema(**data)

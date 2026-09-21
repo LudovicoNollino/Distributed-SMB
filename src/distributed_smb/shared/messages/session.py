@@ -75,6 +75,15 @@ class SessionClosed:
 
 
 @dataclass(slots=True)
+class SessionJoinRejected:
+    """Sent by the lobby to a client whose join could not be accepted."""
+
+    session_id: str
+    reason: str
+    message_type: MessageType = field(init=False, default=MessageType.SESSION_JOIN_REJECTED)
+
+
+@dataclass(slots=True)
 class SessionJoined:
     """Sent by the lobby to the joining client after a successful join."""
 

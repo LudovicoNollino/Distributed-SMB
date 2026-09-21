@@ -72,6 +72,33 @@ def test_the_handshake_creates_the_session_and_numbers_the_joiners():
                 assert _join_session(second, created["session_id"], player_id="c2", port=50012) == 2
 
 
+def test_a_session_refuses_the_fifth_player():
+    """The roster, the sprites and the staggered election timers are all built
+    for four: the lobby must turn the fifth away instead of half-admitting it."""
+    with client.websocket_connect("/lobby") as host_ws:
+        session_id = _create_session(host_ws)
+
+        with client.websocket_connect("/lobby") as c1, client.websocket_connect("/lobby") as c2:
+            with client.websocket_connect("/lobby") as c3:
+                for index, ws in enumerate((c1, c2, c3), start=1):
+                    assert _join_session(ws, session_id, player_id=f"c{index}", port=50010 + index)
+
+                with client.websocket_connect("/lobby") as too_many:
+                    _send(
+                        too_many,
+                        "session_join",
+                        session_id=session_id,
+                        player_id="c4",
+                        ip="127.0.0.1",
+                        port=50020,
+                    )
+                    refusal = _next(too_many)
+
+    assert refusal["message_type"] == MessageType.SESSION_JOIN_REJECTED
+    assert "4" in refusal["reason"]
+    assert len(lobby_manager.get_roster(session_id).get_all_players()) == 4
+
+
 def test_game_start_is_broadcast_and_marks_the_session_active():
     with client.websocket_connect("/lobby") as host_ws:
         session_id = _create_session(host_ws)

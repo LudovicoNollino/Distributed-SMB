@@ -86,7 +86,7 @@ def test_predict_runs_once_per_client_frame_and_never_on_the_host():
     client.udp_handler = _FakeUdpHandler()
     input_state = InputState(right=True)
 
-    client.process_frame(TICK_INTERVAL, input_state)
+    client.process_frame(input_state)
 
     assert client_spy.predict_calls == [input_state]
 
@@ -95,21 +95,21 @@ def test_predict_runs_once_per_client_frame_and_never_on_the_host():
     host.prediction_engine = host_spy
     host.udp_handler = _FakeUdpHandler()
 
-    host.process_frame(TICK_INTERVAL, InputState())
+    host.process_frame(InputState())
 
     assert host_spy.predict_calls == []
 
 
-def test_predict_uses_fixed_tick_interval_regardless_of_real_frame_dt():
-    """A tick replayed with a different dt than the host used for it lands
-    somewhere else, and the error compounds over a jump arc."""
+def test_every_predicted_tick_uses_the_fixed_simulation_step():
+    """However long the real frame took, the tick is integrated by
+    TICK_INTERVAL: a tick replayed with a different step than the host used
+    for it lands somewhere else, and the error compounds over a jump arc."""
     nc = NodeController().bootstrap(role=PlayerRole.CLIENT)
     spy = _SpyPredictionEngine()
     nc.prediction_engine = spy
     nc.udp_handler = _FakeUdpHandler()
 
-    # A slow, contended frame — far from the fixed 1/60 tick interval.
-    nc.process_frame(0.2, InputState(right=True))
+    nc.process_frame(InputState(right=True))
 
     assert spy.predict_dts == [TICK_INTERVAL]
 

@@ -11,7 +11,12 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from distributed_smb.network.serializer import Serializer
-from distributed_smb.shared.config import LOBBY_WS_PATH, LOBBY_WS_PORT, player_id_for
+from distributed_smb.shared.config import (
+    LOBBY_WS_PATH,
+    LOBBY_WS_PORT,
+    MAX_PLAYERS,
+    player_id_for,
+)
 from distributed_smb.shared.enums import ConnectionStatus
 from distributed_smb.shared.messages.session import (
     GameStart,
@@ -22,6 +27,7 @@ from distributed_smb.shared.messages.session import (
     SessionCreated,
     SessionJoin,
     SessionJoined,
+    SessionJoinRejected,
     SessionLeave,
     SessionRecreate,
 )
@@ -100,6 +106,11 @@ class LobbyManager:
             return False
         record.entries = [e for e in record.entries if e["join_index"] != join_index]
         return bool(leaving["is_host"])
+
+    def is_full(self, session_id: str) -> bool:
+        """A session holds at most MAX_PLAYERS participants, host included."""
+        record = self._sessions.get(session_id)
+        return record is not None and len(record.entries) >= MAX_PLAYERS
 
     def has_session(self, session_id: str) -> bool:
         return session_id in self._sessions
@@ -195,6 +206,15 @@ async def lobby_endpoint(ws: WebSocket) -> None:
             elif message_type == MessageType.SESSION_JOIN:
                 msg: SessionJoin = _serializer.decode_ws_message(data)
                 session_id = msg.session_id
+                if lobby_manager.is_full(session_id):
+                    LOGGER.info("lobby: session %s is full, refusing a join", session_id)
+                    rejected = SessionJoinRejected(
+                        session_id=session_id,
+                        reason=f"The session already has {MAX_PLAYERS} players",
+                    )
+                    await ws.send_text(json.dumps(_serializer.encode_ws_message(rejected)))
+                    session_id = None
+                    continue
                 join_index = lobby_manager.join_session(session_id, msg.player_id, msg.ip, msg.port)
                 lobby_manager.add_connection(session_id, ws)
                 joined = SessionJoined(join_index=join_index)
