@@ -5,7 +5,7 @@ import socket
 import threading
 from collections.abc import Iterable
 
-from distributed_smb.shared.config import DISCOVERY_UDP_PORT
+from distributed_smb.shared.config import DISCOVERY_UDP_PORT, DISCOVERY_TIMEOUT
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class DiscoveryService:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("0.0.0.0", DISCOVERY_UDP_PORT))
-        sock.settimeout(1.0)
+        sock.settimeout(DISCOVERY_TIMEOUT)
         self._sock = sock
 
         query = f"WHO {session_id}".encode()
