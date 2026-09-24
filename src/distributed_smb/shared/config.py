@@ -152,7 +152,7 @@ RECONCILE_MAX_GLIDE_PX: float = 8.0
 # 0 in production.
 ARTIFICIAL_LATENCY_MS: int = 0
 
-#DISCOVERY_TIMEOUT: time to wait for a discovery response from a host before giving up. 
-#Used in the lobby discovery process to avoid waiting indefinitely for a response 
-#from a host that may not be available
+# DISCOVERY_TIMEOUT: time to wait for a discovery response from a host before giving up.
+# Used in the lobby discovery process to avoid waiting indefinitely for a response
+# from a host that may not be available
 DISCOVERY_TIMEOUT: float = 10.0

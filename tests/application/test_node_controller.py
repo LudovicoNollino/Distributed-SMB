@@ -7,7 +7,7 @@ from distributed_smb.domain.entity import (
 )
 from distributed_smb.domain.world import WorldState
 from distributed_smb.network.serializer import Serializer
-from distributed_smb.shared.config import TICK_INTERVAL
+from distributed_smb.shared.config import PREDICTION_LEAD_DRIFT_TOLERANCE, TICK_INTERVAL
 from distributed_smb.shared.enums import NodeState, PlayerRole
 from distributed_smb.shared.input import InputState
 from distributed_smb.shared.messages.sync import WorldStateSnapshot
@@ -138,9 +138,9 @@ class _FakePredictionEngine:
         return self._pending
 
 
-def test_the_frozen_baseline_ignores_noise_but_follows_a_sustained_drift():
-    """Without the tolerance band every reconcile would trigger a correction;
-    without the drift the client would fight a permanently higher RTT."""
+def test_the_frozen_baseline_ignores_noise_and_never_follows_the_drift():
+    """The tolerance band absorbs the per-snapshot noise; a lead beyond it is
+    corrected without moving the target, or the target would chase the drift."""
     steady = NodeController()
     steady.prediction_lead_calibration_remaining = 0
     steady.prediction_lead_baseline = 3.0
@@ -149,6 +149,7 @@ def test_the_frozen_baseline_ignores_noise_but_follows_a_sustained_drift():
     steady._adjust_prediction_lead()
 
     assert steady.prediction_lead_baseline == 3.0
+    assert steady.pending_tick_adjustment == 0
 
     drifting = NodeController()
     drifting.prediction_lead_calibration_remaining = 0
@@ -158,7 +159,43 @@ def test_the_frozen_baseline_ignores_noise_but_follows_a_sustained_drift():
     for _ in range(10):
         drifting._adjust_prediction_lead()
 
-    assert drifting.prediction_lead_baseline == 5.0
+    assert drifting.prediction_lead_baseline == 3.0
+    assert drifting.pending_tick_adjustment == -1
+
+
+class _DriftingPredictionEngine:
+    """A client whose tick loop runs slightly faster than the host's."""
+
+    def __init__(self, pending: int, controller: NodeController) -> None:
+        self._pending = pending
+        self._controller = controller
+
+    def pending_count(self) -> int:
+        return self._pending
+
+    def advance_frame(self, frame: int) -> None:
+        if self._controller.pending_tick_adjustment == -1:
+            self._pending -= 1  # the skipped tick is one input fewer in flight
+        elif frame % 3 == 0:
+            self._pending += 1  # clock drift against the host
+        self._controller.pending_tick_adjustment = 0
+
+
+def test_a_sustained_clock_drift_keeps_the_prediction_lead_bounded():
+    """Real-LAN regression: lead and baseline used to climb together for the
+    whole session, turning a 5px correction into a 150px one."""
+    controller = NodeController()
+    controller.prediction_lead_calibration_remaining = 0
+    controller.prediction_lead_baseline = 3.0
+    engine = _DriftingPredictionEngine(pending=3, controller=controller)
+    controller.prediction_engine = engine
+
+    for frame in range(1, 1201):
+        controller._adjust_prediction_lead()
+        engine.advance_frame(frame)
+
+    assert engine.pending_count() <= 3.0 + PREDICTION_LEAD_DRIFT_TOLERANCE + 1
+    assert controller.prediction_lead_baseline == 3.0
 
 
 def test_adjust_prediction_lead_drains_backlog_after_reconnection_reset():

@@ -5,7 +5,7 @@ import socket
 import threading
 from collections.abc import Iterable
 
-from distributed_smb.shared.config import DISCOVERY_UDP_PORT, DISCOVERY_TIMEOUT
+from distributed_smb.shared.config import DISCOVERY_TIMEOUT, DISCOVERY_UDP_PORT
 
 LOGGER = logging.getLogger(__name__)
 

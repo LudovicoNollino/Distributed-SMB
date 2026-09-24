@@ -304,9 +304,15 @@ class ClientGameplayMixin:
         baseline = self.prediction_lead_baseline
         deviation = pending - baseline
 
+        # The baseline is never moved by a correction: it is the calibrated
+        # lead this connection needs, and a correction exists precisely to pull
+        # `pending` back to it. Letting it follow the correction (baseline += 1)
+        # made the target chase the drift instead of opposing it: each cycle
+        # recovered one tick and conceded one, so lead and baseline climbed
+        # together without bound (observed on a real LAN rejoin: pending 3 -> 29,
+        # apparent RTT 80ms -> 419ms, with the frame time perfectly stable).
         if deviation > PREDICTION_LEAD_DRIFT_TOLERANCE:
             self.pending_tick_adjustment = -1
-            baseline += 1.0
             LOGGER.debug(
                 "prediction lead drift: pending=%d baseline=%.2f -> skipping next tick",
                 pending,
@@ -314,7 +320,6 @@ class ClientGameplayMixin:
             )
         elif deviation < -PREDICTION_LEAD_DRIFT_TOLERANCE:
             self.pending_tick_adjustment = 1
-            baseline -= 1.0
             LOGGER.debug(
                 "prediction lead drift: pending=%d baseline=%.2f -> double-ticking next frame",
                 pending,
