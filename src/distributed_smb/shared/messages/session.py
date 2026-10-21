@@ -45,9 +45,8 @@ class SessionJoin:
             raise MessageValidationError(f"Invalid ip: {self.ip}")
         if self.rejoin_join_index is not None and not 0 <= self.rejoin_join_index < MAX_PLAYERS:
             raise MessageValidationError(f"Invalid rejoin_join_index: {self.rejoin_join_index}")
-        if (
-            self.rejoin_join_index is not None
-            and self.player_id != player_id_for(self.rejoin_join_index)
+        if self.rejoin_join_index is not None and self.player_id != player_id_for(
+            self.rejoin_join_index
         ):
             raise MessageValidationError(
                 "player_id must match rejoin_join_index when requesting a rejoin"

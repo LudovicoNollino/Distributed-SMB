@@ -151,13 +151,10 @@ class LobbyManager:
         if record is None:
             return False
         if rejoin_join_index is not None:
-            return (
-                rejoin_join_index not in record.reserved_join_indices
-                and not any(
-                    entry["join_index"] == rejoin_join_index
-                    and entry["player_id"] != player_id_for(rejoin_join_index)
-                    for entry in record.entries
-                )
+            return rejoin_join_index not in record.reserved_join_indices and not any(
+                entry["join_index"] == rejoin_join_index
+                and entry["player_id"] != player_id_for(rejoin_join_index)
+                for entry in record.entries
             )
         return (
             len({entry["join_index"] for entry in record.entries} | record.reserved_join_indices)
