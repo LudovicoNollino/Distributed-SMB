@@ -41,18 +41,21 @@ def test_a_sole_survivor_promotes_immediately_without_claiming():
     ends in the same state a direct promotion would reach."""
     nc, broker = make_controller(with_host_in_roster=True)
 
-    nc._on_self_elected(SelfElected(my_ip="10.0.0.2"))
+    try:
+        nc._on_self_elected(SelfElected(my_ip="10.0.0.2"))
 
-    assert nc._promotion_done is True
-    assert nc.role is PlayerRole.HOST
-    assert nc.engine.is_authoritative is True
-    assert broker.promoted_port == GAME_EVENT_WS_PORT
-    assert nc.roster.get_player("player1") is None  # the crashed host is gone
-    assert nc.roster.get_host().player_id == "player2"
+        assert nc._promotion_done is True
+        assert nc.role is PlayerRole.HOST
+        assert nc.engine.is_authoritative is True
+        assert broker.promoted_port == GAME_EVENT_WS_PORT
+        assert nc.roster.get_player("player1") is None  # the crashed host is gone
+        assert nc.roster.get_host().player_id == "player2"
 
-    broker.promoted_port = None
-    nc._promote_to_host()
-    assert broker.promoted_port is None  # promoting twice does nothing
+        broker.promoted_port = None
+        nc._promote_to_host()
+        assert broker.promoted_port is None  # promoting twice does nothing
+    finally:
+        nc.udp_handler.close_socket()
 
 
 def test_with_surviving_peers_the_claim_is_broadcast_and_the_promotion_deferred():
@@ -76,22 +79,25 @@ def test_promotion_waits_for_every_pending_ack_and_ignores_spurious_ones():
     nc, _ = make_controller()
     awaiting_acks(nc, "10.0.0.3", "10.0.0.4")
 
-    nc._on_election_ack(ack("10.0.0.99"))
-    nc._on_election_ack(ack("10.0.0.3"))
+    try:
+        nc._on_election_ack(ack("10.0.0.99"))
+        nc._on_election_ack(ack("10.0.0.3"))
 
-    assert nc._promotion_done is False
-    assert nc.role is PlayerRole.CLIENT
-    assert nc._pending_election_acks == {"10.0.0.4"}
+        assert nc._promotion_done is False
+        assert nc.role is PlayerRole.CLIENT
+        assert nc._pending_election_acks == {"10.0.0.4"}
 
-    nc._on_election_ack(ack("10.0.0.4"))
+        nc._on_election_ack(ack("10.0.0.4"))
 
-    assert nc._promotion_done is True
-    assert nc.role is PlayerRole.HOST
-    assert nc.engine.is_authoritative is True
+        assert nc._promotion_done is True
+        assert nc.role is PlayerRole.HOST
+        assert nc.engine.is_authoritative is True
 
-    promoted_role = nc.role
-    nc._on_election_ack(ack("10.0.0.4"))  # relay echo, after the fact
-    assert nc.role is promoted_role
+        promoted_role = nc.role
+        nc._on_election_ack(ack("10.0.0.4"))  # relay echo, after the fact
+        assert nc.role is promoted_role
+    finally:
+        nc.udp_handler.close_socket()
 
 
 def test_the_claim_goes_out_over_udp_to_every_surviving_peer():
@@ -189,6 +195,7 @@ def test_the_promoted_host_re_registers_the_session_for_rejoining_nodes(monkeypa
     assert message.session_id == SESSION
     assert message.next_join_index == 3
     assert message.reserved_join_indices == [0, 2]
+    nc.udp_handler.close_socket()
 
 
 def _following_a_new_host() -> NodeController:
