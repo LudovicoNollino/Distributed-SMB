@@ -7,7 +7,7 @@ import pytest
 
 from distributed_smb.application.election import SelfElected
 from distributed_smb.application.node_controller import NodeController
-from distributed_smb.domain.entity import DestructibleBlock
+from distributed_smb.domain.entity import DestructibleBlock, Player
 from distributed_smb.domain.world import EnvironmentalState, WorldState
 from distributed_smb.network.transport.udp import UdpHandler
 from distributed_smb.shared.config import (
@@ -170,6 +170,8 @@ def test_our_own_claim_echoed_back_by_the_relay_is_ignored():
 def test_the_promoted_host_re_registers_the_session_for_rejoining_nodes(monkeypatch):
     """Runs on a background thread, so join it before asserting."""
     nc, _ = make_controller()
+    nc.roster.add_player(peer("player3", "10.0.0.3", 50012, 2))
+    nc.engine.world_state.add_player(Player(player_id="player1", x=250, y=100, join_index=0))
     nc.lobby_service = SpyLobbyService()
     fake_ws = FakeWsHandler()
     monkeypatch.setattr(
@@ -185,8 +187,8 @@ def test_the_promoted_host_re_registers_the_session_for_rejoining_nodes(monkeypa
     message = fake_ws.sent[0]
     assert isinstance(message, SessionRecreate)
     assert message.session_id == SESSION
-    # Only the promoted node (join_index=1) is left, so the next index is 2.
-    assert message.next_join_index == 2
+    assert message.next_join_index == 3
+    assert message.reserved_join_indices == [0, 2]
 
 
 def _following_a_new_host() -> NodeController:

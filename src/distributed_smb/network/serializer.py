@@ -243,6 +243,7 @@ class Serializer:
                     player_id=validated.player_id,
                     ip=validated.ip,
                     port=validated.port,
+                    rejoin_join_index=validated.rejoin_join_index,
                 )
 
             if message_type == MessageType.SESSION_RECREATE:
@@ -253,6 +254,7 @@ class Serializer:
                     host_ip=validated.host_ip,
                     host_udp_port=validated.host_udp_port,
                     host_join_index=validated.host_join_index,
+                    reserved_join_indices=validated.reserved_join_indices,
                 )
 
             if message_type == MessageType.SESSION_LEAVE:
